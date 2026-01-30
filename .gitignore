@@ -1,0 +1,47 @@
+# Logs and data captures
+logs/
+captured_data/
+discrepancies.log
+*.log
+
+# Diagnostic and temporary files
+*.tmp
+*.txt
+*.log
+!README
+!LICENSE
+!Containerfile
+!podman-compose.yml
+!hamclock.desktop
+!hamclock_run.sh  # Keep any scripts if they exist
+!*.md
+!*.cpp
+!*.h
+!*.c
+!*.py
+!Makefile
+
+# Specific tracking exclusions
+captured_data/
+logs/
+discrepancies.log
+processed_data/
+__pycache__/
+
+# Build artifacts
+hamclock-web-800x480
+*.o
+*.a
+*.so
+*.d
+*.bmp.z
+!processed_data/*.bmp.z
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS files
+.DS_Store
+Thumbs.db
