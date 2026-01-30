@@ -126,11 +126,11 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
     def handle_static(self, path):
         try:
             # Map path to local file in DATA_DIR
-            # e.g., /geomag/kindex.txt -> processed_data/kindex.txt
-            # e.g., /ssn-31.txt -> processed_data/ssn-31.txt
+            # e.g., /geomag/kindex.txt -> processed_data/geomag/kindex.txt
             
-            filename = os.path.basename(path)
-            local_path = os.path.join(DATA_DIR, filename)
+            # Remove leading slash for os.path.join
+            rel_path = path.lstrip('/')
+            local_path = os.path.join(DATA_DIR, rel_path)
             logger.debug(f"Static request for: {path} -> {local_path}")
             
             if os.path.exists(local_path):
@@ -142,7 +142,7 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
                     self.wfile.write(content)
             else:
                 logger.warning(f"Static file not found: {local_path}")
-                self.send_error(404, f"File {filename} not found in {DATA_DIR}")
+                self.send_error(404, f"File {rel_path} not found in {DATA_DIR}")
         except (BrokenPipeError, ConnectionResetError) as e:
             logger.warning(f"Client disconnected during static response: {e}")
         except Exception as e:
@@ -152,7 +152,8 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
     def handle_version(self, query):
         # Current HamClock version is 4.22
         # Original response is exactly 32 bytes including newlines
-        version_text = "4.22\nNo info for version  4.22\n\n\n\n"
+        # Format: "X.XX\nNo info for version  X.XX\n\n\n"
+        version_text = "4.22\nNo info for version  4.22\n\n\n"
         self.send_response(200)
         self.send_header("Content-type", "text/plain")
         self.end_headers()
@@ -160,7 +161,8 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
 
     def handle_world_wx(self):
         try:
-            sample_path = os.path.join(DATA_DIR, "worldwx_wx_sample.txt")
+            # Use the de-proxied original data if available
+            sample_path = os.path.join(DATA_DIR, "worldwx/wx.txt")
             if os.path.exists(sample_path):
                 logger.info(f"Serving World Weather shim from {sample_path}")
                 with open(sample_path, "rb") as f:

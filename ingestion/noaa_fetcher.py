@@ -14,6 +14,12 @@ NOAA_SCALES_URL = "https://services.swpc.noaa.gov/products/noaa-scales.json"
 # Note: Aurora is often derived from other data, but NOAA has a probability file.
 # For simplicity, we'll fetch the ovation forecast or similar if possible.
 AURORA_URL = "https://services.swpc.noaa.gov/json/ovation_aurora_latest.json"
+DRAP_URL = "https://services.swpc.noaa.gov/text/drap_global_frequencies.txt"
+DXCC_URL = "https://clearskyinstitute.com/ham/HamClock/cty/cty_wt_mod-ll-dxcc.txt"
+ONTA_URL = "https://clearskyinstitute.com/ham/HamClock/ONTA/onta.txt"
+DXPEDS_URL = "https://clearskyinstitute.com/ham/HamClock/dxpeds/dxpeditions.txt"
+CONTESTS_URL = "https://clearskyinstitute.com/ham/HamClock/contests/contests311.txt"
+DST_URL = "https://clearskyinstitute.com/ham/HamClock/dst/dst.txt"
 
 OUTPUT_DIR = "processed_data"
 
@@ -284,6 +290,19 @@ def fetch_aurora():
     except Exception as e:
         print(f"Error fetching Aurora: {e}")
 
+def fetch_static_file(url, filename):
+    """Fetch a static file and save it to the output directory"""
+    print(f"Fetching static file from {url}...")
+    try:
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        filepath = os.path.join(OUTPUT_DIR, filename)
+        with open(filepath, "wb") as f:
+            f.write(resp.content)
+        print(f"Saved {filename}")
+    except Exception as e:
+        print(f"Error fetching {filename}: {e}")
+
 if __name__ == "__main__":
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
@@ -293,3 +312,11 @@ if __name__ == "__main__":
     fetch_solar_wind_and_bz()
     fetch_noaa_scales()
     fetch_aurora()
+    
+    # Fetch additional static resources
+    fetch_static_file(DRAP_URL, "stats.txt")
+    fetch_static_file(DXCC_URL, "cty_wt_mod-ll-dxcc.txt")
+    fetch_static_file(ONTA_URL, "onta.txt")
+    fetch_static_file(DXPEDS_URL, "dxpeditions.txt")
+    fetch_static_file(CONTESTS_URL, "contests311.txt")
+    fetch_static_file(DST_URL, "dst.txt")
