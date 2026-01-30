@@ -8,7 +8,7 @@ This document is for AI agents (like Antigravity) to ensure consistent service m
 | :--- | :--- | :--- | :--- |
 | **Backend** | `server.py`, `ingestion/scheduler.py` | 9086 | `logs/server.log`, `logs/scheduler.log` |
 | **Proxy** | `shadow_proxy/proxy.py` | 9085 | `logs/proxy.log` |
-| **Client** | `./hamclock-web-800x480` (Binary) | 8081 | `logs/hamclock.log` |
+| **Client** | `./hamclock-web-1600x960` (Binary) | 8081 | `logs/hamclock.log` |
 
 ## How to Manage Services
 

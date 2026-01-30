@@ -84,12 +84,13 @@ start_proxy() {
 }
 
 start_client() {
-    if [ -f "./hamclock-web-800x480" ]; then
+    local client_bin="./hamclock-web-1600x960"
+    if [ -f "$client_bin" ]; then
         stop_client
         echo "Starting Local HamClock Client (Port $UI_PORT)..."
-        ./hamclock-web-800x480 >> "$LOG_DIR/hamclock.log" 2>&1 &
+        "$client_bin" >> "$LOG_DIR/hamclock.log" 2>&1 &
     else
-        echo "No local client (./hamclock-web-800x480) found. Skipping."
+        echo "No local client ($client_bin) found. Skipping."
     fi
 }
 
