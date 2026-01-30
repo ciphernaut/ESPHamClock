@@ -62,28 +62,26 @@ def format_for_hamclock(data, lat, lng):
         
         # wttr.in returns strings, need to ensure numeric where expected
         city = nearest.get('areaName', [{'value': 'Unknown'}])[0]['value']
-        temp_c = current.get('temp_C', '0')
+        temp_c = float(current.get('temp_C', '0'))
         pressure = current.get('pressure', '1013')
         humidity = current.get('humidity', '50')
-        wind_speed_kmh = current.get('windspeedKmph', '0')
-        wind_speed_mps = float(wind_speed_kmh) * 1000 / 3600
+        wind_speed_kmh = float(current.get('windspeedKmph', '0'))
+        wind_speed_mps = wind_speed_kmh * 1000 / 3600
         wind_dir = current.get('winddir16Point', 'N')
         desc = current.get('weatherDesc', [{'value': 'Clear'}])[0]['value']
         
         # Attribution for HamClock - original uses openweathermap.org
         attribution = "openweathermap.org"
         
-        # Timezone offset in seconds
-        # wttr.in doesn't give this directly. Estimate based on longitude:
-        # 3600 seconds per 15 degrees.
+        # Original backend seems to round to nearest hour
         try:
-            timezone = int(float(lng) / 15.0 * 3600)
+            timezone = int(round(float(lng) / 15.0) * 3600)
         except:
             timezone = 0 
         
         output = [
             f"city={city}",
-            f"temperature_c={temp_c}",
+            f"temperature_c={temp_c:.2f}",
             f"pressure_hPa={pressure}",
             f"pressure_chg=-999", # -999 indicates unknown change
             f"humidity_percent={humidity}",
