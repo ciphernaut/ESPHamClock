@@ -38,7 +38,15 @@ class ShadowProxy(http.server.SimpleHTTPRequestHandler):
             stats["total"] += 1
             if match: stats["matches"] += 1
             
-            summary[base_path] = stats
+            # Store detailed parity info for the dashboard
+            summary[base_path] = {
+                "status": "Match" if match else "Diff",
+                "parity": f"{stats['matches']}/{stats['total']}",
+                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            # Also keep raw stats for internal use
+            summary[base_path]["_stats"] = stats
+            
             with open(PARITY_SUMMARY, "w") as f:
                 json.dump(summary, f, indent=4)
         except Exception as e:
@@ -60,6 +68,10 @@ class ShadowProxy(http.server.SimpleHTTPRequestHandler):
             return 502, [], str(e).encode()
 
     def do_GET(self):
+        if self.path == "/parity":
+            self.handle_parity()
+            return
+
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         print(f"[{timestamp}] Incoming Request ({PROXY_MODE}): {self.path}")
         
@@ -163,6 +175,37 @@ class ShadowProxy(http.server.SimpleHTTPRequestHandler):
                     except Exception as e:
                         f.write(f"Binary difference detected (cannot diff text: {e})\n")
                 f.write("-" * 40 + "\n")
+
+    def handle_parity(self):
+        try:
+            html = "<html><head><title>HamClock Parity Dashboard</title>"
+            html += "<style>body{font-family:sans-serif;background:#1a1a1a;color:#eee;padding:20px;}"
+            html += "table{border-collapse:collapse;width:100%;}th,td{padding:12px;text-align:left;border-bottom:1px solid #444;}"
+            html += "th{background:#333;}.match{color:#4caf50;}.diff{color:#f44336;}</style></head><body>"
+            html += "<h1>📡 HamClock Parity Dashboard (Proxy View)</h1>"
+            
+            if os.path.exists(PARITY_SUMMARY):
+                with open(PARITY_SUMMARY, "r") as f:
+                    data = json.load(f)
+                
+                html += "<table><tr><th>Endpoint</th><th>Last Result</th><th>Parity (Matches/Total)</th><th>Last Checked</th></tr>"
+                for endpoint, info in data.items():
+                    parity_class = "match" if info.get('status') == "Match" else "diff"
+                    html += f"<tr><td>{endpoint}</td><td class='{parity_class}'>{info.get('status')}</td>"
+                    html += f"<td>{info.get('parity')}</td>"
+                    html += f"<td>{info.get('timestamp')}</td></tr>"
+                html += "</table>"
+            else:
+                html += "<p>No parity data collected yet.</p>"
+            
+            html += "</body></html>"
+            
+            self.send_response(200)
+            self.send_header("Content-type", "text/html")
+            self.end_headers()
+            self.wfile.write(html.encode('utf-8'))
+        except Exception as e:
+            self.send_error(500, str(e))
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
