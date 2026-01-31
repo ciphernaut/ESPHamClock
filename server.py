@@ -68,6 +68,8 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
         elif normalized_path.startswith("/geomag/") or normalized_path.startswith("/ssn/") or normalized_path.startswith("/solar-flux/") \
              or normalized_path.startswith("/xray/") or normalized_path.startswith("/solar-wind/") or normalized_path.startswith("/Bz/") \
              or normalized_path.startswith("/aurora/") or normalized_path.startswith("/dst/") or normalized_path.startswith("/NOAASpaceWX/") \
+             or normalized_path.startswith("/drap/") or normalized_path.startswith("/cty/") or normalized_path.startswith("/ONTA/") \
+             or normalized_path.startswith("/dxpeds/") or normalized_path.startswith("/contests/") \
              or normalized_path.endswith(".txt"):
             # Serve from processed_data
             self.handle_static(normalized_path)
