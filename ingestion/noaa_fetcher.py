@@ -56,13 +56,18 @@ def fetch_and_parse_solar_indices():
         flux_records.extend([sw_flux, sw_flux, sw_flux])
 
     # Save SSN (last 31 days)
+    # Ensure we have at least 31 records and take the most recent ones.
+    # HamClock usually shows the current month clearly.
     ssn_file = os.path.join(OUTPUT_DIR, "ssn", "ssn-31.txt")
     with open(ssn_file, "w") as f:
+        # ORIGINAL Parity Note: HamClock expects exactly 31 records for a 31-day history.
+        # It often includes TODAY if data is available early.
         for record in ssn_records[-31:]:
             f.write(f"{record}\n")
     print(f"Saved {len(ssn_records[-31:])} SSN records to {ssn_file}")
 
     # Save Solar Flux (last 99 values - matching SFLUX_NV)
+    # Original seems to use 3 samples per day.
     flux_file = os.path.join(OUTPUT_DIR, "solar-flux", "solarflux-99.txt")
     with open(flux_file, "w") as f:
         for record in flux_records[-99:]:
@@ -83,7 +88,7 @@ def fetch_and_parse_kp():
             if not line.startswith((':', '#')) and len(line) > 60:
                 # Planetary K-indices are in the last columns
                 # Example: 2026 01 01 ... 12   2.00  3.00  2.67  2.67  3.33  2.67  2.33  2.67
-                match = re.search(r'(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)$', line)
+                match = re.search(r'(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)$', line)
                 if match:
                     kp_history.extend([float(v) for v in match.groups()])
     except Exception as e:
@@ -104,30 +109,35 @@ def fetch_and_parse_kp():
                 # 00-03UT       3.67         2.67         1.67
                 parts = line.split()
                 if len(parts) >= 4:
-                    # We take only the first two days of predictions (Jan 30, Jan 31 in the example)
-                    kp_predicted.append((float(parts[1]), float(parts[2])))
+                    # We take only the first two days of predictions (Day 1, Day 2)
+                    try:
+                        kp_predicted.append((float(parts[1]), float(parts[2])))
+                    except ValueError: pass
         
         # kp_predicted is currently [(UT0_D1, UT0_D2), (UT1_D1, UT1_D2), ...]
         # We need to flatten it: D1_UT0, D1_UT1, ..., D1_UT7, D2_UT0, ...
         day1 = [p[0] for p in kp_predicted]
         day2 = [p[1] for p in kp_predicted]
-        kp_predicted = day1 + day2
+        kp_predicted = day1[:8] + day2[:8] # Ensure exactly 8 per day
     except Exception as e:
         print(f"Error fetching predicted KP: {e}")
 
     # Combine: last 56 historical (7 days) + 16 predicted (2 days)
     total_kp = kp_history[-56:] + kp_predicted[:16]
     
-    if len(total_kp) < 72:
+    # Force exactly 72 values
+    if len(total_kp) > 72:
+        total_kp = total_kp[-72:] # Keep the most recent 72
+    elif len(total_kp) < 72:
         print(f"Warning: Only found {len(total_kp)} KP values (need 72). Padding...")
         while len(total_kp) < 72:
             total_kp.append(total_kp[-1] if total_kp else 0.0)
 
     kp_file = os.path.join(OUTPUT_DIR, "geomag", "kindex.txt")
     with open(kp_file, "w") as f:
-        for val in total_kp[:72]:
+        for val in total_kp:
             f.write(f"{val:.2f}\n")
-    print(f"Saved 72 KP records to {kp_file}")
+    print(f"Saved {len(total_kp)} KP records to {kp_file}")
 
 def fetch_xray():
     """Fetch X-Ray data and format it to match HamClock's expectation (10-min intervals)"""
@@ -148,8 +158,8 @@ def fetch_xray():
             time_tag = entry['time_tag'].replace('Z', '')
             # Parse YYYY-MM-DDTHH:MM:SS
             dt = datetime.datetime.strptime(time_tag, "%Y-%m-%dT%H:%M:%S")
-            # We only keep rows where minute ends in 2 to match original 10-min sampling
-            if dt.minute % 10 != 2:
+            # HamClock samples at 10-min intervals ending in 8 (based on discrepancy log)
+            if dt.minute % 10 != 8:
                 continue
                 
             ts_key = dt.strftime("%Y %m %d %H%M")
