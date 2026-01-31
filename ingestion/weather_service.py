@@ -107,21 +107,23 @@ def format_for_hamclock(data, lat, lng):
         except:
             timezone = 0 
         
-        output = [
+        lines = [
+            f"lat={lat}",
+            f"lng={lng}",
             f"city={city}",
             f"temperature_c={temp_c:.2f}",
-            f"pressure_hPa={pressure}",
-            f"pressure_chg=-999", # -999 indicates unknown change
-            f"humidity_percent={humidity}",
+            f"humidity_percent={float(humidity):.2f}",
             f"wind_speed_mps={wind_speed_mps:.2f}",
             f"wind_dir_name={wind_dir}",
+            f"pressure_hPa={float(pressure):.2f}",
+            f"pressure_chg=0.00",
             f"clouds={desc}",
             f"conditions={desc}",
-            f"attribution={attribution}",
+            f"attribution=wttr.in",
             f"timezone={timezone}"
         ]
         
-        return "\n".join(output)
+        return "\n".join(lines)
     except Exception as e:
         logger.error(f"Error formatting weather: {e}")
         return ""
