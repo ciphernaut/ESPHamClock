@@ -130,96 +130,111 @@ def generate_voacap_response(query):
             cos_s_dec = math.cos(s_dec_rad)
             sin_s_dec = math.sin(s_dec_rad)
             
+            # Precompute Solar Zenith at TX for grayline/absorption
+            cos_z_tx = sin_tx_lat * sin_s_dec + cos_tx_lat * cos_s_dec * math.cos(tx_lng_rad - s_lng_rad)
+            
             pixel_data = bytearray(MAP_W * MAP_H * 2)
             for y in range(MAP_H):
                 srl = SIN_RX_LATS[y]
                 crl = COS_RX_LATS[y]
-                row_offset = y * MAP_W * 2
-                
-                # Precompute Geomag Lat for the row
-                # (Approximate: use lng in loop)
-                
-                for x in range(MAP_W): # wait, use MAP_W
-                    pass
             
-            # Re-implementing with full loop optimization
+            # --- Iteration 11: Value Buffer for Smoothing ---
+            val_buffer = [0.0] * (MAP_W * MAP_H)
+            
             for y in range(MAP_H):
                 srl = SIN_RX_LATS[y]
                 crl = COS_RX_LATS[y]
-                row_offset = y * MAP_W * 2
-                rlng_rads_y = RX_LNG_RADS
+                rlat_rad = RX_LAT_RADS[y]
                 
                 for x in range(MAP_W):
-                    rlng_rad = rlng_rads_y[x]
-                    rlat_rad = RX_LAT_RADS[y]
+                    rlng_rad = RX_LNG_RADS[x]
                     
-                    # Distance & Path Angle
-                    cos_c = sin_tx_lat * SIN_RX_LATS[y] + cos_tx_lat * COS_RX_LATS[y] * math.cos(rlng_rad - tx_lng_rad)
-                    dist_rad = math.acos(max(-1.0, min(1.0, cos_c)))
-                    dist_km = dist_rad * 6371.0
+                    # 1. Great Circle Distance & Azimuth
+                    d_lon = rlng_rad - tx_lng_rad
+                    y_dist = math.sin(d_lon) * crl
+                    x_dist = cos_tx_lat * srl - sin_tx_lat * crl * math.cos(d_lon)
+                    az_rad = math.atan2(y_dist, x_dist)
                     
-                    # Find Midpoint (Approximate for speed)
-                    # For short-to-medium paths, simple average is okay. For long paths, we use it as a 'characterizing point'.
-                    mlat_rad = (tx_lat_rad + rlat_rad) / 2.0
-                    mlng_rad = tx_lng_rad + (rlng_rad - tx_lng_rad) / 2.0
-                    if abs(rlng_rad - tx_lng_rad) > math.pi: # Wrap-around check
-                         mlng_rad = (tx_lng_rad + rlng_rad + (2*math.pi if tx_lng_rad < rlng_rad else -2*math.pi)) / 2.0
+                    cos_c = sin_tx_lat * srl + cos_tx_lat * crl * math.cos(d_lon)
+                    dist_km = math.acos(max(-1.0, min(1.0, cos_c))) * 6371.0
                     
-                    smlat = math.sin(mlat_rad)
-                    cmlat = math.cos(mlat_rad)
+                    # --- Iteration 12: Geomagnetic Anisotropy (Azimuthal Bending) ---
+                    # Propagation is enhanced North-South (along field lines).
+                    # We model this by adjusting the 'effective' refraction based on azimuth.
+                    # az_rad=0 or pi is N/S. az_rad=pi/2 or -pi/2 is E/W.
+                    mag_az_f = 1.0 + 0.35 * math.pow(math.cos(az_rad), 2.0)
                     
-                    # 1. Solar Zenith Angle at Midpoint (The reflection point)
-                    cos_z_m = smlat * sin_s_dec + cmlat * cos_s_dec * math.cos(mlng_rad - s_lng_rad)
-                    sza_deg_m = math.degrees(math.acos(max(-1.0, min(1.0, cos_z_m))))
+                    # 2. Path Samples (1/4, 1/2, 3/4)
+                    sample_weights = [0.25, 0.5, 0.25]
+                    sum_rel = 0.0
                     
-                    sun_factor = 0.4 + 0.6 * math.pow(max(0, cos_z_m + 0.15), 0.7)
-                    if sza_deg_m > 98: sun_factor *= 0.5
-                    
-                    # 2. Geomagnetic Latitude at Midpoint
-                    sin_mag_m = smlat * math.sin(pole_lat) + cmlat * math.cos(pole_lat) * math.cos(mlng_rad - pole_lng)
-                    mag_lat_rad_m = math.asin(max(-1.0, min(1.0, sin_mag_m)))
-                    mag_lat_deg_m = math.degrees(mag_lat_rad_m)
-                    
-                    mag_lat_factor = 0.9 + 0.4 * (math.cos(mag_lat_rad_m) ** 2)
-                    anomaly = 0.55 * math.exp(-((abs(mag_lat_deg_m) - 15)/8)**2)
-                    mag_lat_factor += anomaly * sun_factor
-                    
-                    # 3. Distance Factor (Sharper Hops)
-                    hop_center = 3100.0 * (1.0 / (1.0 + toa_param/40.0))
-                    # Narrower gaussians for corridor effect (800km vs 1200km)
-                    m_factor = 1.0 + 2.2 * math.exp(-((dist_km - hop_center)/900)**2)
-                    m_factor += 0.9 * math.exp(-((dist_km - hop_center*2.6)/1800)**2)
-                    
-                    # 4. Absorption (D-Layer)
-                    if not is_muf and m_mhz > 0:
-                        # Integrated absorption along path is complex; use weighted average
-                        cos_z_rx = SIN_RX_LATS[y] * sin_s_dec + COS_RX_LATS[y] * cos_s_dec * math.cos(rlng_rad - s_lng_rad)
-                        avg_cos_z = (max(0, cos_z_m) + max(0, cos_z_rx)) / 2.0
-                        absorption = 2.4 * avg_cos_z * (9.0 / m_mhz)**1.8
-                        abs_factor = math.exp(-absorption)
-                    else:
-                        abs_factor = 1.0
-                    
-                    # 5. Grayline Enhancement at Midpoint (The 'Ducting' effect)
-                    grayline = 0.65 * math.exp(-(cos_z_m / 0.10)**2)
-                    
-                    val = muf_base * sun_factor * mag_lat_factor * m_factor * (1.0 + grayline) * abs_factor
-                    
+                    for i, frac in enumerate([0.25, 0.5, 0.75]):
+                        slng = tx_lng_rad + (rlng_rad - tx_lng_rad) * frac
+                        if abs(rlng_rad - tx_lng_rad) > math.pi:
+                            slng = tx_lng_rad + (rlng_rad - tx_lng_rad + (2*math.pi if tx_lng_rad < rlng_rad else -2*math.pi)) * frac
+                        slat = tx_lat_rad + (rlat_rad - tx_lat_rad) * frac
+                        
+                        sslat, cslat = math.sin(slat), math.cos(slat)
+                        cos_z_s = sslat * sin_s_dec + cslat * cos_s_dec * math.cos(slng - s_lng_rad)
+                        
+                        s_ang = math.acos(max(-1.0, min(1.0, cos_z_s)))
+                        s_proj = math.asin(min(1.0, (6371.0 / 6721.0) * math.sin(s_ang)))
+                        cos_z_p = math.cos(s_proj)
+                        
+                        is_polar = (s_dec_rad < -0.1 and slat < -0.8) or (s_dec_rad > 0.1 and slat > 0.8)
+                        m_sun = (0.45 + 0.55 * math.pow(max(0, cos_z_p + 0.1), 0.75)) if cos_z_s > -0.1 else (0.35 * math.cos(slat-s_dec_rad) * math.exp((cos_z_s+0.1)*6) if is_polar else 0.45*math.exp((cos_z_s+0.1)*6))
+                        
+                        # Refraction modulated by Magnetic Anisotropy
+                        ref_f = 1.0 + (dist_km / 1100.0) * (1.0 - cos_z_p) * 0.03 * mag_az_f
+                        
+                        s_mag = sslat * math.sin(pole_lat) + cslat * math.cos(pole_lat) * math.cos(slng - pole_lng)
+                        m_lat_r = math.asin(max(-1.0, min(1.0, s_mag)))
+                        m_lat_d = math.degrees(m_lat_r)
+                        m_bend = 0.85 + 0.4 * (math.cos(m_lat_r)**2) + 0.75 * (math.exp(-((m_lat_d - 15)/7)**2) + math.exp(-((m_lat_d + 15)/7)**2))
+                        
+                        p_muf = muf_base * (m_sun * m_bend)
+                        
+                        if is_muf:
+                            sum_rel += p_muf * sample_weights[i]
+                        else:
+                            h_len = 3100.0 * (1.0 / (1.0 + toa_param/35.0)) * (0.6 + 0.4 * (m_mhz/max(0.5, p_muf))) * ref_f
+                            res = 0.3 + 2.65 * math.pow(math.cos(math.pi * (dist_km / h_len)), 6.0)
+                            abs_p = math.exp(-3.3 * max(0, cos_z_p) * (8.5 / m_mhz)**2.2)
+                            p_rel = 1.0 / (1.0 + math.exp(-15.0 * ((p_muf / m_mhz) * res * abs_p - 0.70)))
+                            sum_rel += p_rel * sample_weights[i]
+                            
+                    val_buffer[y * MAP_W + x] = sum_rel
+
+            # --- Spatial Smoothing Kernel (3x3 Blur) ---
+            smooth_buffer = list(val_buffer)
+            for y in range(1, MAP_H - 1):
+                for x in range(1, MAP_W - 1):
+                    idx = y * MAP_W + x
+                    # Simple average box blur
+                    tot = (val_buffer[idx] * 4.0 + 
+                           val_buffer[idx-1] + val_buffer[idx+1] + 
+                           val_buffer[idx-MAP_W] + val_buffer[idx+MAP_W]) / 8.0
+                    smooth_buffer[idx] = tot
+
+            # --- Final Banding & RGB Conversion ---
+            for y in range(MAP_H):
+                row_off = y * MAP_W * 2
+                for x in range(MAP_W):
+                    val = smooth_buffer[y * MAP_W + x]
                     if is_muf:
                         c565 = MUF_CACHE[min(500, max(0, int(val * 10)))]
                     else:
-                        # Categorical Banding for visual parity
-                        if val > m_mhz * 1.6: rel = 100
-                        elif val > m_mhz: rel = 60 + (val / m_mhz - 1.0) * 70
-                        elif val > m_mhz * 0.4: rel = (val / m_mhz - 0.4) * 100
-                        else: rel = 0
+                        # Grayline ducting endpoints
+                        rlng_rad = RX_LNG_RADS[x]
+                        cos_z_rx = SIN_RX_LATS[y] * sin_s_dec + COS_RX_LATS[y] * cos_s_dec * math.cos(rlng_rad - s_lng_rad)
+                        g_duct = 0.85 * math.exp(-(min(abs(cos_z_tx), abs(cos_z_rx)) / 0.07)**2)
                         
-                        # Apply banding (step to nearest 10%)
-                        rel = round(rel / 10.0) * 10.0
-                        c565 = REL_CACHE[min(1000, max(0, int(rel * 10)))]
+                        rel_v = min(100.0, max(0.0, val * 100.0 * (1.0 + g_duct)))
+                        rel_v = round(rel_v / 10.0) * 10.0
+                        c565 = REL_CACHE[min(1000, max(0, int(rel_v * 10)))]
                     
-                    pixel_data[row_offset + x*2] = c565 & 0xFF
-                    pixel_data[row_offset + x*2 + 1] = (c565 >> 8) & 0xFF
+                    pixel_data[row_off + x*2] = c565 & 0xFF
+                    pixel_data[row_off + x*2 + 1] = (c565 >> 8) & 0xFF
             
             results.append(zlib.compress(header + pixel_data))
         return results
@@ -229,6 +244,6 @@ def generate_voacap_response(query):
 
 if __name__ == "__main__":
     t0 = time.time()
-    res = generate_voacap_response({'TXLAT': [45], 'TXLNG': [-90], 'MHZ': [0]})
+    res = generate_voacap_response({})
     if res:
         print(f"Done, {len(res)} maps in {time.time()-t0:.2f}s")
