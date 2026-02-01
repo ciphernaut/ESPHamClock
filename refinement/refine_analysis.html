@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>VOACAP Vision Analysis Bridge</title>
+    <style>
+        body { font-family: sans-serif; background: #222; color: #eee; padding: 20px; }
+        .images { display: flex; gap: 20px; margin-bottom: 20px; }
+        img { border: 1px solid #444; width: 400px; }
+        pre { background: #000; padding: 15px; border-radius: 5px; white-space: pre-wrap; word-wrap: break-word; }
+        #status { color: #4caf50; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>📡 VOACAP Vision Refinement</h1>
+    <div id="status">Starting Analysis...</div>
+    
+    <div class="images">
+        <div>
+            <h3>Ground Truth</h3>
+            <img id="gt" src="gt_day.png">
+        </div>
+        <div>
+            <h3>Local Implementation</h3>
+            <img id="local" src="local_day.png">
+        </div>
+    </div>
+
+    <h3>LLM Vision Feedback:</h3>
+    <pre id="response">Waiting for API response...</pre>
+
+    <script>
+        async function toBase64(imgId) {
+            const img = document.getElementById(imgId);
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            return canvas.toDataURL('image/png').split(',')[1];
+        }
+
+        async function analyze() {
+            try {
+                document.getElementById('status').innerText = 'Converting images...';
+                // Wait for images to load
+                await new Promise(r => setTimeout(r, 1000));
+                
+                const gtBase64 = await toBase64('gt');
+                const localBase64 = await toBase64('local');
+                
+                document.getElementById('status').innerText = 'Calling LM Studio...';
+                
+                const payload = {
+                    model: "qwen/qwen3-vl-4b",
+                    messages: [
+                        {
+                            role: "user",
+                            content: [
+                                { type: "text", text: "Analyze these two VOACAP propagation maps. Image 1 is the Ground Truth. Image 2 is our Local Implementation. Describe the visual differences and suggest mathematical or logical refinements to our implementation to match the ground truth. Specifically look at path corridors and geographical sensitivity." },
+                                { type: "image_url", image_url: { url: `data:image/png;base64,${gtBase64}` } },
+                                { type: "image_url", image_url: { url: `data:image/png;base64,${localBase64}` } }
+                            ]
+                        }
+                    ],
+                    temperature: 0.2
+                };
+
+                const resp = await fetch('http://127.0.0.1:1234/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await resp.json();
+                document.getElementById('response').innerText = data.choices[0].message.content;
+                document.getElementById('status').innerText = 'Analysis Complete.';
+            } catch (err) {
+                document.getElementById('response').innerText = 'Error: ' + err.message;
+                document.getElementById('status').innerText = 'Analysis Failed.';
+            }
+        }
+
+        window.onload = analyze;
+    </script>
+</body>
+</html>
