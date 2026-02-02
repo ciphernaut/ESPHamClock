@@ -32,6 +32,8 @@ DATA_DIR = "processed_data"
 
 
 class HamClockBackend(http.server.SimpleHTTPRequestHandler):
+    protocol_version = "HTTP/1.0"
+
     def do_GET(self):
         parsed_path = urllib.parse.urlparse(self.path)
         path = parsed_path.path

@@ -116,12 +116,16 @@ class ShadowProxy(http.server.SimpleHTTPRequestHandler):
             # Serve original
             self.send_backend_response(orig_status, orig_headers, orig_data)
 
+    protocol_version = "HTTP/1.0"
+
     def send_backend_response(self, status, headers, data):
         try:
             self.send_response(status)
             for key, val in headers:
-                if key.lower() not in ['content-length', 'transfer-encoding']:
+                if key.lower() not in ['content-length', 'transfer-encoding', 'connection']:
                     self.send_header(key, val)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Connection", "close")
             self.end_headers()
             self.wfile.write(data)
         except (BrokenPipeError, ConnectionResetError):
