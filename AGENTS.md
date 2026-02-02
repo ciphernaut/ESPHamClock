@@ -1,14 +1,14 @@
 # ESPHamClock - Agent Development Guide
 
-This guide provides essential information for AI agents working on the ESPHamClock project, a comprehensive amateur radio weather and propagation display system.
-The prime objective of this project is to develop the backend to workl with the existing client.
+> [!IMPORTANT]
+> ## CRITICAL PROJECT MANDATES
+> 1. **SERVICE MANAGEMENT**: ALWAYS use `./run_stack.sh` for starting, stopping, or checking status of any project component. Never run `server.py` or other main binaries directly unless debugging a specific failure that `run_stack.sh` cannot handle.
+> 2. **WORKFLOWS**: Refer to `.agent/workflows/` for standard operating procedures. Specifically, use `manage-stack.md` for service control.
+> 3. **CACHING**: This project relies heavily on file-based caching in `backend/data/processed_data/`. Always check for existing cached data before fetching from upstream.
+> 4. **PARITY**: The goal is 1:1 parity with the original HamClock backend. Every line/pixel counts.
 
 ## Project Architecture
-
-ESPHamClock consists of three main components:
-- **Backend**: Python HTTP server (`backend/server.py`) providing weather, propagation, and geolocation services
-- **Proxy**: Shadow proxy (`proxy/proxy.py`) for external service integration and development
-- **Client**: Compiled C++ application (`client/`) with multiple build targets (X11, web, framebuffer)
+...
 
 ## Build Commands
 
