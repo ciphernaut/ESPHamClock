@@ -13,6 +13,27 @@ MAP_H = 330
 MUF_CACHE = [0] * 501
 REL_CACHE = [0] * 1001
 
+COUNTRIES_MAP = None
+TERRAIN_MAP = None
+
+def load_base_maps():
+    global COUNTRIES_MAP, TERRAIN_MAP
+    try:
+        c_path = "processed_data/map-D-660x330-Countries.bmp"
+        t_path = "processed_data/map-D-660x330-Terrain.bmp"
+        if os.path.exists(c_path):
+            with open(c_path, "rb") as f:
+                f.seek(122)
+                COUNTRIES_MAP = struct.unpack('<' + 'H'*(MAP_W*MAP_H), f.read(MAP_W*MAP_H*2))
+        if os.path.exists(t_path):
+            with open(t_path, "rb") as f:
+                f.seek(122)
+                TERRAIN_MAP = struct.unpack('<' + 'H'*(MAP_W*MAP_H), f.read(MAP_W*MAP_H*2))
+    except Exception as e:
+        logger.error(f"Error loading base maps: {e}")
+
+load_base_maps()
+
 def interpolate_color_value(val, scale):
     if val <= scale[0][0]: c = scale[0][1]
     elif val >= scale[-1][0]: c = scale[-1][1]
@@ -177,14 +198,25 @@ def generate_voacap_response(query):
                     combo_f = (gray_tangent_f + mag_az_f) / 2.0
                     
                     # 2. Path Samples (1/4, 1/2, 3/4)
+                    # --- Iteration 20: Vector-Based Path Interpolation (Seam Fix) ---
+                    # Convert TX and RX to 3D Cartesian vectors to interpolate across the antipode smoothly.
+                    v_tx = (cos_tx_lat * math.cos(tx_lng_rad), cos_tx_lat * math.sin(tx_lng_rad), sin_tx_lat)
+                    v_rx = (crl * math.cos(rlng_rad), crl * math.sin(rlng_rad), srl)
+                    
                     sample_weights = [0.25, 0.5, 0.25]
                     sum_rel = 0.0
                     
                     for i, frac in enumerate([0.25, 0.5, 0.75]):
-                        slng = tx_lng_rad + (rlng_rad - tx_lng_rad) * frac
-                        if abs(rlng_rad - tx_lng_rad) > math.pi:
-                            slng = tx_lng_rad + (rlng_rad - tx_lng_rad + (2*math.pi if tx_lng_rad < rlng_rad else -2*math.pi)) * frac
-                        slat = tx_lat_rad + (rlat_rad - tx_lat_rad) * frac
+                        # Linear interpolation of vectors (approximate but stable across date line)
+                        v_mid = [v_tx[j] + (v_rx[j] - v_tx[j]) * frac for j in range(3)]
+                        mag = math.sqrt(sum(v*v for v in v_mid))
+                        if mag < 0.001: # Handle exact antipode by slightly nudging
+                            v_mid = [v_tx[j] + (v_rx[j] - v_tx[j] + 0.001) * frac for j in range(3)]
+                            mag = math.sqrt(sum(v*v for v in v_mid))
+                        
+                        v_n = [v/mag for v in v_mid]
+                        slat = math.asin(max(-1.0, min(1.0, v_n[2])))
+                        slng = math.atan2(v_n[1], v_n[0])
                         
                         sslat, cslat = math.sin(slat), math.cos(slat)
                         cos_z_s = sslat * sin_s_dec + cslat * cos_s_dec * math.cos(slng - s_lng_rad)
@@ -226,7 +258,14 @@ def generate_voacap_response(query):
                         s_mag = sslat * math.sin(pole_lat) + cslat * math.cos(pole_lat) * math.cos(slng - pole_lng)
                         m_lat_r = math.asin(max(-1.0, min(1.0, s_mag)))
                         m_lat_d = math.degrees(m_lat_r)
-                        m_bend = 0.85 + 0.55 * (math.cos(m_lat_r)**2) + 0.9 * (math.exp(-((m_lat_d - 15.5)/7.5)**2) + math.exp(-((m_lat_d + 15.5)/7.5)**2))
+                        # --- Iteration 21: Polar Spectral Realignment ---
+                        # 1. Polar Cap Absorption (PCA)
+                        # Strongest at high geomagnetic latitudes, frequency-dependent.
+                        # We model this as a separate loss factor.
+                        pca_loss = math.exp(-1.2 * math.pow(math.sin(m_lat_r), 4.0) * (20.0 / m_mhz)**1.5)
+                        
+                        # 2. Enhanced Magnetic Bending (Brewster-like peak for polar rings)
+                        m_bend = 0.85 + 0.65 * (math.cos(m_lat_r)**2.5) + 1.1 * (math.exp(-((m_lat_d - 15.5)/6.5)**2) + math.exp(-((m_lat_d + 15.5)/6.5)**2))
                         
                         p_muf = muf_base * reflection_factor * m_bend
                         
@@ -243,14 +282,14 @@ def generate_voacap_response(query):
                             
                             # 3. Angle of Incidence (phi) - Brewster-like corridor peak
                             ele_angle = math.atan(900.0 / (max(20.0, h_len) / 2.0))
-                            reflection_eff = math.pow(math.cos(math.pi/2.0 - ele_angle), 0.25)
+                            reflection_eff = math.pow(math.cos(math.pi/2.0 - ele_angle), 0.3)
                             
                             # 4. Integrated Path Refraction (Relaxed)
                             path_loss_factor = 1.0 / (1.0 + 0.00004 * dist_km * (1.0 / max(0.2, combo_f)))
                             
-                            # 5. Final p_rel
+                            # 5. Final p_rel (with PCA)
                             abs_p = math.exp(-3.5 * terminator_h * zenith_layer * (10.0 / m_mhz)**2.2)
-                            p_rel = 1.0 / (1.0 + math.exp(-18.0 * ((p_muf / m_mhz) * res_total * abs_p * reflection_eff * path_loss_factor - 0.58)))
+                            p_rel = 1.0 / (1.0 + math.exp(-18.0 * ((p_muf / m_mhz) * res_total * abs_p * reflection_eff * path_loss_factor * pca_loss - 0.58)))
                             sum_rel += p_rel * sample_weights[i]
                             
                     val_buffer[y * MAP_W + x] = sum_rel
@@ -288,9 +327,8 @@ def generate_voacap_response(query):
                     
                     # --- Iteration 15: Texture Grain & Dithering ---
                     # Match the specific pixel-transition of ground truth.
-                    # We add a small pseudo-random grain based on coordinates.
                     grain = (((x * 13) ^ (y * 17)) & 7) / 100.0 - 0.035
-                    val_g = max(0.0, min(1.0, val + grain))
+                    val_g = max(0.0, min(1.0 if not is_muf else 50.0, val + (grain if not is_muf else grain*5.0)))
                     
                     if is_muf:
                         c565 = MUF_CACHE[min(500, max(0, int(val_g * 10)))]
@@ -302,9 +340,35 @@ def generate_voacap_response(query):
                         
                         rel_v = val_g * 100.0 * (1.0 + g_duct)
                         # Ordered Dithering (match HamClock visual feel)
-                        # We use a 10% threshold but add 'fuzz' at the edges.
                         rel_v = round(rel_v / 10.0) * 10.0
                         c565 = REL_CACHE[min(1000, max(0, int(rel_v * 10)))]
+
+                    # --- Phase 6: Base Map Integration ---
+                    if COUNTRIES_MAP and TERRAIN_MAP:
+                        base_c = COUNTRIES_MAP[idx]
+                        terrain_c = TERRAIN_MAP[idx]
+                        
+                        # Use black for borders to match GT parity
+                        if base_c == 0xFFFF:
+                            c565 = 0x0000 
+                        else:
+                            # Alpha blend propagation color with terrain
+                            # Increase propagation opacity for better visual "pop"
+                            alpha = 0.82
+                            
+                            r1 = (c565 >> 11) & 0x1F
+                            g1 = (c565 >> 5) & 0x3F
+                            b1 = c565 & 0x1F
+                            
+                            r2 = (terrain_c >> 11) & 0x1F
+                            g2 = (terrain_c >> 5) & 0x3F
+                            b2 = terrain_c & 0x1F
+                            
+                            r = int(r1 * alpha + r2 * (1 - alpha))
+                            g = int(g1 * alpha + g2 * (1 - alpha))
+                            b = int(b1 * alpha + b2 * (1 - alpha))
+                            
+                            c565 = (r << 11) | (g << 5) | b
                     
                     pixel_data[row_off + x*2] = c565 & 0xFF
                     pixel_data[row_off + x*2 + 1] = (c565 >> 8) & 0xFF
