@@ -50,6 +50,54 @@ def fetch_weather(lat, lng):
         logger.error(f"Error fetching weather: {e}")
         return None
 
+def get_prevailing_stats():
+    """
+    Parses worldwx/wx.txt and calculates overall prevailing statistics:
+    - Min/Max temperature
+    - Most frequent weather condition
+    - Average humidity/pressure (if needed)
+    Returns string format for HamClock.
+    """
+    grid_file = os.path.join(BASE_DATA_DIR, "processed_data", "worldwx", "wx.txt")
+    if not os.path.exists(grid_file):
+        logger.warning(f"Grid file {grid_file} not found for prevailing stats")
+        return "No data available"
+
+    try:
+        temps = []
+        conditions = {}
+        
+        with open(grid_file, 'r') as f:
+            for line in f:
+                if line.startswith('#') or not line.strip():
+                    continue
+                parts = line.split()
+                if len(parts) >= 8:
+                    try:
+                        temp = float(parts[2])
+                        cond = parts[7]
+                        temps.append(temp)
+                        conditions[cond] = conditions.get(cond, 0) + 1
+                    except (ValueError, IndexError):
+                        continue
+        
+        if not temps:
+            return "No valid data in grid"
+
+        min_temp = min(temps)
+        max_temp = max(temps)
+        avg_temp = sum(temps) / len(temps)
+        
+        # Most frequent condition
+        prevailing_cond = max(conditions, key=conditions.get) if conditions else "Clear"
+        
+        # Original format seems to be simple labels or key-value?
+        # Let's provide a summary that the client can display in the DX Wx screen
+        return f"MinTemp: {min_temp:.1f}C\nMaxTemp: {max_temp:.1f}C\nAvgTemp: {avg_temp:.1f}C\nPrevailing: {prevailing_cond}"
+    except Exception as e:
+        logger.error(f"Error calculating prevailing stats: {e}")
+        return "Error calculating stats"
+
 def format_for_hamclock(data, lat, lng):
     """
     Formats wttr.in JSON data into the key=value format expected by HamClock.

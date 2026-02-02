@@ -26,6 +26,8 @@ ONTA_URL = "https://clearskyinstitute.com/ham/HamClock/ONTA/onta.txt"
 DXPEDS_URL = "https://clearskyinstitute.com/ham/HamClock/dxpeds/dxpeditions.txt"
 CONTESTS_URL = "https://clearskyinstitute.com/ham/HamClock/contests/contests311.txt"
 DST_URL = "https://clearskyinstitute.com/ham/HamClock/dst/dst.txt"
+DRAP_URL = "https://services.swpc.noaa.gov/json/drap_absorption_stats.json"
+WORLD_WX_URL = "https://clearskyinstitute.com/ham/HamClock/worldwx/wx.txt"
 
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "processed_data")
 
@@ -418,6 +420,10 @@ def fetch_static_file(url, filename):
         resp = requests.get(url, timeout=10)
         resp.raise_for_status()
         filepath = os.path.join(OUTPUT_DIR, filename)
+        # Ensure directory exists for the static file
+        file_dir = os.path.dirname(filepath)
+        if not os.path.exists(file_dir):
+            os.makedirs(file_dir)
         with open(filepath, "wb") as f:
             f.write(resp.content)
         print(f"Saved {filename}")
@@ -431,7 +437,7 @@ def fetch_all():
         
     # Ensure all required subdirectories exist
     subdirs = ["ssn", "solar-flux", "geomag", "xray", "solar-wind", "Bz", 
-               "aurora", "NOAASpaceWX", "drap", "cty", "ONTA", "dxpeds", "contests", "dst"]
+               "aurora", "NOAASpaceWX", "drap", "cty", "ONTA", "dxpeds", "contests", "dst", "worldwx"]
     for sd in subdirs:
         path = os.path.join(OUTPUT_DIR, sd)
         if not os.path.exists(path):
@@ -447,11 +453,18 @@ def fetch_all():
     fetch_dxpeds()
     
     # Fetch additional static resources into specific paths
-    fetch_static_file(DRAP_URL, "drap/stats.txt")
+    # fetch_static_file(DRAP_URL, "drap/stats.txt") # Handled by drap_service.py now
+    
+    # Fetch world weather grid (High-prio for parity)
+    print("Fetching world weather grid...")
+    fetch_static_file(WORLD_WX_URL, "worldwx/wx.txt")
+
     fetch_static_file(DXCC_URL, "cty/cty_wt_mod-ll-dxcc.txt")
     # ONTA and DXPeds are now dynamic
     fetch_static_file(CONTESTS_URL, "contests/contests311.txt")
     fetch_static_file(DST_URL, "dst/dst.txt")
+
+    print("\nFetch cycle complete.")
 
 if __name__ == "__main__":
     fetch_all()

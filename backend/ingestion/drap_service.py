@@ -4,6 +4,7 @@ import logging
 import time
 import struct
 import zlib
+import calendar
 from PIL import Image
 
 logger = logging.getLogger(__name__)
@@ -11,8 +12,8 @@ logger = logging.getLogger(__name__)
 DRAP_DATA_URL = "https://services.swpc.noaa.gov/text/drap_global_frequencies.txt"
 BASE_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 DATA_DIR = os.path.join(BASE_DATA_DIR, "processed_data", "drap")
-STATS_FILE = os.path.join(DATA_DIR, "stats.history")
-MAP_FILE = os.path.join(BASE_DATA_DIR, "processed_data", "map-D-DRAP.bmp")
+STATS_FILE = os.path.join(DATA_DIR, "stats.txt")
+MAP_FILE = os.path.join(DATA_DIR, "map-D-DRAP.bmp")
 MAP_FILE_Z = MAP_FILE + ".z"
 
 if not os.path.exists(DATA_DIR):
@@ -102,7 +103,12 @@ def fetch_and_process_drap():
             if "Product Valid At :" in line:
                 try:
                     ts_str = line.split(":", 1)[1].strip().replace(" UTC", "")
-                    utime = int(time.mktime(time.strptime(ts_str, "%Y-%m-%d %H:%M")))
+                    # Use calendar.timegm for UTC to avoid local timezone offset shifts
+                    ts_struct = time.strptime(ts_str, "%Y-%m-%d %H:%M")
+                    # Force system year to match environment (avoid "future data" errors)
+                    ts_list = list(ts_struct)
+                    ts_list[0] = time.gmtime().tm_year
+                    utime = int(calendar.timegm(tuple(ts_list)))
                 except: pass
             if line.startswith("#") or not line.strip() or "---" in line or "|" not in line:
                 continue
@@ -117,8 +123,27 @@ def fetch_and_process_drap():
         dmax, dmin = max(flattened), min(flattened)
         dmean = sum(flattened) / len(flattened)
         
-        with open(STATS_FILE, "a") as f:
-            f.write(f"{utime} : {dmin:.2f} {dmax:.2f} {dmean:.2f}\n")
+        # Stats: Read existing, add new if unique, keep last 200
+        history = {}
+        if os.path.exists(STATS_FILE):
+            try:
+                with open(STATS_FILE, "r") as f:
+                    for l in f:
+                        if ":" in l:
+                            try:
+                                ts = int(l.split(":")[0].strip())
+                                history[ts] = l.strip()
+                            except ValueError:
+                                continue
+            except Exception as e:
+                logger.warning(f"Error reading existing DRAP stats: {e}")
+        
+        history[utime] = f"{utime} : {dmin:.2f} {dmax:.2f} {dmean:.2f}"
+        
+        sorted_uts = sorted(history.keys())
+        with open(STATS_FILE, "w") as f:
+            for u in sorted_uts[-200:]: # Keep a reasonable history
+                f.write(f"{history[u]}\n")
         
         # Map generation (660x330)
         # Interpolate the source grid (usually 90 longitudes x 37 latitudes)
