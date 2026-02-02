@@ -34,10 +34,10 @@ check_port() {
 status_backend() {
     check_port $BACKEND_PORT "Backend (server.py)"
     # Also check scheduler process
-    if pgrep -f "python3 ingestion/scheduler.py" > /dev/null; then
-        echo "[OK] Scheduler (ingestion/scheduler.py) is running"
+    if pgrep -f "backend/ingestion/scheduler.py" > /dev/null; then
+        echo "[OK] Scheduler (backend/ingestion/scheduler.py) is running"
     else
-        echo "[OFF] Scheduler (ingestion/scheduler.py) is NOT running"
+        echo "[OFF] Scheduler (backend/ingestion/scheduler.py) is NOT running"
     fi
 }
 
@@ -52,7 +52,7 @@ status_client() {
 stop_backend() {
     echo "Stopping Backend (Port $BACKEND_PORT) and Scheduler..."
     fuser -k "$BACKEND_PORT/tcp" 2>/dev/null
-    pkill -f "python3 ingestion/scheduler.py" 2>/dev/null
+    pkill -f "backend/ingestion/scheduler.py" 2>/dev/null
     sleep 1
 }
 
@@ -71,20 +71,20 @@ stop_client() {
 start_backend() {
     stop_backend
     echo "Starting Backend Server (Port $BACKEND_PORT)..."
-    python3 -u server.py >> "$LOG_DIR/server.log" 2>&1 &
+    python3 -u backend/server.py >> "$LOG_DIR/server.log" 2>&1 &
     echo "Starting Data Scheduler..."
-    python3 -u ingestion/scheduler.py >> "$LOG_DIR/scheduler.log" 2>&1 &
+    python3 -u backend/ingestion/scheduler.py >> "$LOG_DIR/scheduler.log" 2>&1 &
 }
 
 start_proxy() {
     stop_proxy
-    echo "Starting Shadow Proxy (Port $PROXY_PORT) in SHADOW mode..."
+    echo "Starting Proxy (Port $PROXY_PORT) in SHADOW mode..."
     export PROXY_MODE=SHADOW
-    python3 -u shadow_proxy/proxy.py >> "$LOG_DIR/proxy.log" 2>&1 &
+    python3 -u proxy/proxy.py >> "$LOG_DIR/proxy.log" 2>&1 &
 }
 
 start_client() {
-    local client_bin="./hamclock-web-1600x960"
+    local client_bin="./bin/hamclock-web-1600x960"
     if [ -f "$client_bin" ]; then
         stop_client
         echo "Starting Local HamClock Client (Port $UI_PORT)..."
