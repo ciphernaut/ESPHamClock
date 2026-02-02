@@ -4,10 +4,11 @@ import json
 import logging
 import time
 import datetime
+import re
 try:
-    from ingestion import onta_service, dxped_service
+    from ingestion import onta_service, dxped_service, drap_service, weather_grid_service
 except ImportError:
-    import onta_service, dxped_service
+    import onta_service, dxped_service, drap_service, weather_grid_service
 
 # NOAA SWPC endpoints
 SOLAR_INDICES_URL = "https://services.swpc.noaa.gov/text/daily-solar-indices.txt"
@@ -171,8 +172,8 @@ def fetch_xray():
             time_tag = entry['time_tag'].replace('Z', '')
             # Parse YYYY-MM-DDTHH:MM:SS
             dt = datetime.datetime.strptime(time_tag, "%Y-%m-%dT%H:%M:%S")
-            # HamClock samples at 10-min intervals ending in 8 (based on discrepancy log)
-            if dt.minute % 10 != 8:
+            # HamClock samples at 10-min intervals ending in 5
+            if dt.minute % 10 != 5:
                 continue
                 
             ts_key = dt.strftime("%Y %m %d %H%M")
@@ -187,9 +188,14 @@ def fetch_xray():
         for k in all_keys:
             s_val = short_flux.get(k, 0.0)
             l_val = long_flux.get(k, 0.0)
-            # Format: 2026  1 29  0748   00000  00000     1.89e-08    6.82e-07
+            # Format: 2026  2  1  1105   00000  00000     1.99e-06    1.72e-05
+            # Note: 2 spaces between year/month/day/time.
             parts = k.split() # YYYY MM DD HHMM
-            formatted = f"{parts[0]:>4} {int(parts[1]):>2} {int(parts[2]):>2}  {parts[3]:>4}   00000  00000     {s_val:8.2e}    {l_val:8.2e}"
+            # The original has a very specific space alignment:
+            # 2026  2  1  1232
+            # 0-3: year, 4-5: spaces, 6: month(1), 7-8: spaces, 9: day(1), 10-11: spaces, 12-15: time(4)
+            # If month is 2 digits, it likely takes pos 5-6.
+            formatted = f"{parts[0]:4} {int(parts[1]):>2} {int(parts[2]):>2}  {parts[3]:04}   00000  00000     {s_val:8.2e}    {l_val:8.2e}"
             records.append(formatted)
         
         xray_file = os.path.join(OUTPUT_DIR, "xray", "xray.txt")
@@ -212,43 +218,33 @@ def fetch_solar_wind_and_bz():
         plasma_resp.raise_for_status()
         mag_resp.raise_for_status()
         
-        plasma_data = {e[0]: e for e in plasma_resp.json()[1:]} # time_tag: record
-        mag_data = {e[0]: e for e in mag_resp.json()[1:]}
+        plasma_json = plasma_resp.json()
+        mag_json = mag_resp.json()
         
-        # Merge by common time tags
-        swind_records = []
-        bz_records = []
+        plasma_data = {e[0]: e for e in plasma_json[1:]} # time_tag: record
+        mag_data = {e[0]: e for e in mag_json[1:]}
         
-        # Sort keys to ensure chronologic order
+        # Pre-calculate UTS for all available times
         all_times = sorted(set(plasma_data.keys()) | set(mag_data.keys()))
-        
-        # Pre-calculate UTS for all available times to speed up search
         uts_map = {}
         for t_str in all_times:
             try:
-                uts_map[t_str] = int(datetime.datetime.fromisoformat(t_str.replace('Z', '')).replace(tzinfo=datetime.timezone.utc).timestamp())
+                # 2026-02-02 23:25:00.000
+                dt = datetime.datetime.strptime(t_str.replace('Z', ''), "%Y-%m-%d %H:%M:%S.%f")
+                uts_map[t_str] = int(dt.replace(tzinfo=datetime.timezone.utc).timestamp())
             except: pass
-
-        # Filter to 10-minute intervals for Bz/Bt and SWind to match BZBT_NV (150)
-        # 150 points * 10 mins = 1500 mins = 25 hours.
-        # Ensure the last point is very recent (within 15 minutes)
-        now_ts = int(time.time())
         
-        swind_10m = []
-        bz_10m = []
-        
-        # Sort all times by UTS for efficient searching
+        # Last point timestamped at a 60-second boundary
+        now_ts = (int(time.time()) // 60) * 60
         sorted_times = sorted(uts_map.items(), key=lambda x: x[1])
-        
-        # Go back 25 hours in 10-minute steps
-        for i in range(150):
-            target_ts = now_ts - (149 - i) * 600
-            
-            # Find closest available timestamp
+
+        # 1. Solar Wind (1440 points for 24h, 1-min interval)
+        swind_final = []
+        for i in range(1440):
+            target_ts = now_ts - (1439 - i) * 60
             closest_t = None
-            min_diff = 301
-            
-            # Since sorted_times is sorted, we could use binary search, but with 1300 items linear is fine
+            min_diff = 31 
+            # Linear search is fine for 1300 items
             for t_str, t_uts in sorted_times:
                 diff = abs(t_uts - target_ts)
                 if diff < min_diff:
@@ -257,36 +253,66 @@ def fetch_solar_wind_and_bz():
             
             if closest_t:
                 p = plasma_data.get(closest_t)
+                if p and p[1] is not None and p[2] is not None:
+                    # Density rounding: strip trailing .0
+                    d_val = float(p[1])
+                    d_str = f"{d_val:.2f}".rstrip('0').rstrip('.')
+                    # Speed rounding: strip trailing .0
+                    s_val = float(p[2])
+                    s_str = f"{s_val:.1f}".rstrip('0').rstrip('.')
+                    swind_final.append(f"{target_ts} {d_str} {s_str}")
+                else:
+                    swind_final.append(f"{target_ts} 0.00 0.0") # Padding
+            else:
+                swind_final.append(f"{target_ts} 0.00 0.0")
+
+        # 2. Bz (150 points, 10-min interval)
+        bz_final = []
+        for i in range(150):
+            target_ts = now_ts - (149 - i) * 600
+            closest_t = None
+            min_diff = 301
+            for t_str, t_uts in sorted_times:
+                diff = abs(t_uts - target_ts)
+                if diff < min_diff:
+                    min_diff = diff
+                    closest_t = t_str
+            
+            if closest_t:
                 m = mag_data.get(closest_t)
-                try:
-                    # SWPC JSON can have null values, handle them
-                    if p and p[1] is not None and p[2] is not None:
-                        swind_10m.append(f"{target_ts} {float(p[1]):.2f} {float(p[2]):.1f}")
-                    if m and m[1] is not None and m[2] is not None and m[3] is not None and m[6] is not None:
-                        bz_10m.append(f"{target_ts} {float(m[1]):>6.1f} {float(m[2]):>6.1f} {float(m[3]):>6.1f} {float(m[6]):>6.1f}")
-                except (IndexError, ValueError, TypeError): pass
+                if m and m[1] is not None and m[2] is not None and m[3] is not None and m[6] is not None:
+                    # Spacing: 1769944800 (10) + 4 spaces + col1 + 3 spaces + col2 + 3 spaces + col3 + 4 spaces + col4
+                    c1 = f"{float(m[1]):.1f}"
+                    c2 = f"{float(m[2]):.1f}"
+                    c3 = f"{float(m[3]):.1f}"
+                    c4 = f"{float(m[6]):.1f}"
+                    bz_final.append(f"{target_ts}    {c1}   {c2}   {c3}    {c4}")
+                else:
+                    bz_final.append(f"{target_ts}    0.0   0.0   0.0    0.0")
+            else:
+                bz_final.append(f"{target_ts}    0.0   0.0   0.0    0.0")
 
-        # Pad to exactly 150 points if needed
-        while len(swind_10m) < 150:
-            oldest_ts = int(swind_10m[0].split()[0]) - 600 if swind_10m else now_ts
-            swind_10m.insert(0, f"{oldest_ts} 0.00 0.0")
-        while len(bz_10m) < 150:
-            oldest_ts = int(bz_10m[0].split()[0]) - 600 if bz_10m else now_ts
-            bz_10m.insert(0, f"{oldest_ts} 0.0 0.0 0.0 0.0")
-
-        swind_file = os.path.join(OUTPUT_DIR, "solar-wind", "swind-24hr.txt")
+        # Write files
+        sw_dir = os.path.join(OUTPUT_DIR, "solar-wind")
+        if not os.path.exists(sw_dir): os.makedirs(sw_dir)
+        swind_file = os.path.join(sw_dir, "swind-24hr.txt")
         with open(swind_file, "w") as f:
-            for r in swind_10m[-150:]:
+            for r in swind_final:
                 f.write(f"{r}\n")
         
-        bz_file = os.path.join(OUTPUT_DIR, "Bz", "Bz.txt")
+        bz_dir = os.path.join(OUTPUT_DIR, "Bz")
+        if not os.path.exists(bz_dir): os.makedirs(bz_dir)
+        bz_file = os.path.join(bz_dir, "Bz.txt")
         with open(bz_file, "w") as f:
             f.write("# UNIX        Bx     By     Bz     Bt\n")
-            for r in bz_10m[-150:]:
+            for r in bz_final:
                 f.write(f"{r}\n")
-        print(f"Saved {len(swind_10m[-150:])} SWind and {len(bz_10m[-150:])} Bz records.")
+        
+        print(f"Saved {len(swind_final)} SWind and {len(bz_final)} Bz records.")
     except Exception as e:
         print(f"Error fetching Solar Wind/Mag: {e}")
+        import traceback
+        traceback.print_exc()
 
 def fetch_noaa_scales():
     """Fetch current R, S, G scales"""
@@ -452,12 +478,29 @@ def fetch_all():
     fetch_onta()
     fetch_dxpeds()
     
+    # Update DRAP (New dynamic service)
+    print("Fetching DRAP absorption data...")
+    try:
+        drap_service.fetch_and_process_drap()
+    except Exception as e:
+        print(f"Error updating DRAP: {e}")
+    
     # Fetch additional static resources into specific paths
     # fetch_static_file(DRAP_URL, "drap/stats.txt") # Handled by drap_service.py now
     
-    # Fetch world weather grid (High-prio for parity)
-    print("Fetching world weather grid...")
-    fetch_static_file(WORLD_WX_URL, "worldwx/wx.txt")
+    # Generate world weather grid locally
+    print("Generating local world weather grid...")
+    try:
+        grid_data = weather_grid_service.generate_weather_grid()
+        if grid_data:
+            grid_file = os.path.join(OUTPUT_DIR, "worldwx", "wx.txt")
+            with open(grid_file, "w") as f:
+                f.write(grid_data)
+            print("Successfully updated worldwx/wx.txt")
+        else:
+            print("Weather grid generation yielded no data, keeping existing file")
+    except Exception as e:
+        print(f"Error generating weather grid: {e}")
 
     fetch_static_file(DXCC_URL, "cty/cty_wt_mod-ll-dxcc.txt")
     # ONTA and DXPeds are now dynamic
