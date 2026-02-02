@@ -12,7 +12,8 @@ logger = logging.getLogger(__name__)
 # or we can use a service like wttr.in which is simpler.
 # HamClock originally used OpenWeatherMap.
 
-WEATHER_DATA_DIR = "processed_data/weather"
+BASE_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+WEATHER_DATA_DIR = os.path.join(BASE_DATA_DIR, "processed_data", "weather")
 
 def fetch_weather(lat, lng):
     """

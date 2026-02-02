@@ -27,7 +27,7 @@ DXPEDS_URL = "https://clearskyinstitute.com/ham/HamClock/dxpeds/dxpeditions.txt"
 CONTESTS_URL = "https://clearskyinstitute.com/ham/HamClock/contests/contests311.txt"
 DST_URL = "https://clearskyinstitute.com/ham/HamClock/dst/dst.txt"
 
-OUTPUT_DIR = "processed_data"
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "processed_data")
 
 def fetch_and_parse_solar_indices():
     """Fetch and format SSN and Solar Flux data"""
