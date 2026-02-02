@@ -20,6 +20,7 @@ try:
     import sdo_service
     import drap_service
     import voacap_service
+    import band_service
     logger.info("Successfully imported all Group 3 dynamic services")
 except ImportError as e:
     logger.error(f"Failed to import services: {e}")
@@ -282,17 +283,13 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
 
     def handle_band_conditions(self, query):
         try:
-            sample_path = os.path.join(DATA_DIR, "band_conditions_sample.txt")
-            if os.path.exists(sample_path):
-                logger.info(f"Serving Band Conditions shim from {sample_path}")
-                with open(sample_path, "rb") as f:
-                    content = f.read()
-                    self.send_response(200)
-                    self.send_header("Content-type", "text/plain")
-                    self.end_headers()
-                    self.wfile.write(content)
-            else:
-                self.send_error(404, "Band conditions sample not found")
+            logger.info(f"Generating dynamic Band Conditions for query: {query}")
+            result = band_service.get_band_conditions(query)
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain")
+            self.send_header("Content-Length", str(len(result)))
+            self.end_headers()
+            self.wfile.write(result.encode())
         except Exception as e:
             logger.error(f"Error in handle_band_conditions: {e}")
             self.send_error(500, str(e))
