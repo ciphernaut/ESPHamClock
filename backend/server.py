@@ -28,7 +28,7 @@ except ImportError as e:
     sys.exit(1)
 
 PORT = 9086
-DATA_DIR = "processed_data"
+DATA_DIR = os.path.join(os.path.dirname(__file__), "data", "processed_data")
 
 
 class HamClockBackend(http.server.SimpleHTTPRequestHandler):

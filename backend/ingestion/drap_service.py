@@ -9,15 +9,18 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 DRAP_DATA_URL = "https://services.swpc.noaa.gov/text/drap_global_frequencies.txt"
-DATA_DIR = "processed_data/drap"
+BASE_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+DATA_DIR = os.path.join(BASE_DATA_DIR, "processed_data", "drap")
 STATS_FILE = os.path.join(DATA_DIR, "stats.history")
-MAP_FILE = "processed_data/map-D-DRAP.bmp"
+MAP_FILE = os.path.join(BASE_DATA_DIR, "processed_data", "map-D-DRAP.bmp")
 MAP_FILE_Z = MAP_FILE + ".z"
 
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
-if not os.path.exists("processed_data/maps"):
-    os.makedirs("processed_data/maps")
+    
+maps_dir = os.path.join(BASE_DATA_DIR, "processed_data", "maps")
+if not os.path.exists(maps_dir):
+    os.makedirs(maps_dir)
 
 def create_bmp_565_header(w, h):
     """

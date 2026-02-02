@@ -1,8 +1,9 @@
 import os
 import re
 
-CAPTURED_DIR = "captured_data"
-PROCESSED_DIR = "processed_data"
+BASE_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+CAPTURED_DIR = os.path.join(BASE_DATA_DIR, "captured_data")
+PROCESSED_DIR = os.path.join(BASE_DATA_DIR, "processed_data")
 
 def deproxy(filename, target_filename):
     print(f"De-proxying {filename} -> {target_filename}")

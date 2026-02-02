@@ -10,8 +10,9 @@ PORT = 9085
 TARGET_HOST = "clearskyinstitute.com"
 LOCAL_REPLACEMENT_HOST = "localhost"
 LOCAL_REPLACEMENT_PORT = 9086
-LOG_DIR = "captured_data"
-DISCREPANCY_LOG = "discrepancies.log"
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+LOG_DIR = os.path.join(BASE_DIR, "backend", "data", "captured_data")
+DISCREPANCY_LOG = os.path.join(BASE_DIR, "logs", "discrepancies.log")
 
 # Proxy Modes:
 # ORIGINAL: Only original backend
@@ -20,13 +21,14 @@ DISCREPANCY_LOG = "discrepancies.log"
 # EXCLUSIVE: Only local backend
 PROXY_MODE = os.environ.get("PROXY_MODE", "SHADOW").upper()
 
-PARITY_SUMMARY = "logs/parity_summary.json"
+PARITY_SUMMARY = os.path.join(BASE_DIR, "logs", "parity_summary.json")
 import json
 
 class ShadowProxy(http.server.SimpleHTTPRequestHandler):
     def update_parity_summary(self, path, match):
         try:
-            if not os.path.exists("logs"): os.makedirs("logs")
+            log_dir = os.path.dirname(PARITY_SUMMARY)
+            if not os.path.exists(log_dir): os.makedirs(log_dir)
             summary = {}
             if os.path.exists(PARITY_SUMMARY):
                 with open(PARITY_SUMMARY, "r") as f:
