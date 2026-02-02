@@ -184,7 +184,7 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
     def handle_voacap_area(self, query):
         try:
             logger.info(f"Generating dynamic VOACAP Area map for query: {query}")
-            results = voacap_service.generate_voacap_response(query)
+            results = voacap_service.generate_voacap_response(query, "REL")
             if results and len(results) == 2:
                 l1, l2 = len(results[0]), len(results[1])
                 self.send_response(200)
@@ -195,6 +195,8 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(results[1])
             else:
                 self.send_error(500, "Failed to generate VOACAP maps")
+        except (BrokenPipeError, ConnectionResetError) as e:
+            logger.warning(f"Client disconnected during VOACAP area response: {e}")
         except Exception as e:
             logger.error(f"Error in handle_voacap_area: {e}", exc_info=True)
             self.send_error(500, str(e))
@@ -210,7 +212,8 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
                 query['MHZ'] = ['0']
             
             logger.info(f"Generating dynamic VOACAP {path} map")
-            results = voacap_service.generate_voacap_response(query)
+            map_type = "TOA" if "TOA" in path else ("MUF" if "MUF" in path else "REL")
+            results = voacap_service.generate_voacap_response(query, map_type)
             if results and len(results) == 2:
                 l1, l2 = len(results[0]), len(results[1])
                 self.send_response(200)
@@ -221,6 +224,8 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(results[1])
             else:
                 self.send_error(500, "Failed to generate VOACAP maps")
+        except (BrokenPipeError, ConnectionResetError) as e:
+            logger.warning(f"Client disconnected during VOACAP map response: {e}")
         except Exception as e:
             logger.error(f"Error in handle_voacap_map: {e}", exc_info=True)
             self.send_error(500, str(e))
