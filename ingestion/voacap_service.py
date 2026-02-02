@@ -255,15 +255,28 @@ def generate_voacap_response(query):
                             
                     val_buffer[y * MAP_W + x] = sum_rel
 
-            # --- Spatial Smoothing Kernel (3x3 Blur) ---
+            # --- Iteration 19: Seamless Longitudinal Wrapping ---
+            # We use periodic indexing for x to treat the left and right edges as neighbors.
             smooth_buffer = list(val_buffer)
             for y in range(1, MAP_H - 1):
-                for x in range(1, MAP_W - 1):
-                    idx = y * MAP_W + x
-                    # Simple average box blur
+                row_idx = y * MAP_W
+                for x in range(MAP_W):
+                    idx = row_idx + x
+                    
+                    # Periodic neighbors for x
+                    x_prev = (x - 1) % MAP_W
+                    x_next = (x + 1) % MAP_W
+                    
+                    # Neighbors
+                    idx_l = row_idx + x_prev
+                    idx_r = row_idx + x_next
+                    idx_t = idx - MAP_W
+                    idx_b = idx + MAP_W
+                    
+                    # Gaussian-style weighted average with wrap-around
                     tot = (val_buffer[idx] * 4.0 + 
-                           val_buffer[idx-1] + val_buffer[idx+1] + 
-                           val_buffer[idx-MAP_W] + val_buffer[idx+MAP_W]) / 8.0
+                           val_buffer[idx_l] + val_buffer[idx_r] + 
+                           val_buffer[idx_t] + val_buffer[idx_b]) / 8.0
                     smooth_buffer[idx] = tot
 
             # --- Final Banding, Grain & RGB Conversion ---
