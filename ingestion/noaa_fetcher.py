@@ -58,7 +58,7 @@ def fetch_and_parse_solar_indices():
         
         date_str = f"{year} {month.zfill(2)} {day.zfill(2)}"
         ssn_records.append(f"{date_str} {ssn}")
-        # Add 3 records per day for solar flux to reach ~99 values for 33 days
+        # Add 3 records per day for solar flux to reach 99 values for 33 days (SFLUX_NV)
         flux_records.extend([sw_flux, sw_flux, sw_flux])
 
     # Save SSN (last 31 days)
@@ -229,7 +229,8 @@ def fetch_solar_wind_and_bz():
 
         # Filter to 10-minute intervals for Bz/Bt and SWind to match BZBT_NV (150)
         # 150 points * 10 mins = 1500 mins = 25 hours.
-        now_ts = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+        # Ensure the last point is very recent (within 15 minutes)
+        now_ts = int(time.time())
         
         swind_10m = []
         bz_10m = []
@@ -281,7 +282,7 @@ def fetch_solar_wind_and_bz():
             f.write("# UNIX        Bx     By     Bz     Bt\n")
             for r in bz_10m[-150:]:
                 f.write(f"{r}\n")
-        print(f"Saved {len(swind_10m[-150:])} SWind and {len(bz_10m[-150:])} Bz records (padded to 150).")
+        print(f"Saved {len(swind_10m[-150:])} SWind and {len(bz_10m[-150:])} Bz records.")
     except Exception as e:
         print(f"Error fetching Solar Wind/Mag: {e}")
 
@@ -354,21 +355,22 @@ def fetch_aurora():
             uts = int(dt.timestamp())
         except:
             uts = int(time.time())
-        # Round to nearest hour for cleaner history
-        uts = (uts // 3600) * 3600
+
+        # HamClock check: if age of top sample is > 1.0 hr, it says "arora data invalid"
+        # So we use the current UTS precisely.
         history[uts] = str(int(max_prob))
         
-        # Sort and limit to last 24 hours (or at least 10 points)
+        # Sort and limit to last 48 points (AURORA_MAXPTS)
         sorted_uts = sorted(history.keys())
         # To avoid "arora data invalid" on first run, we pad if too short
-        if len(sorted_uts) < 5:
-            for i in range(5 - len(sorted_uts)):
-                fake_uts = sorted_uts[0] - (i + 1) * 3600
+        if len(sorted_uts) < 10:
+            for i in range(10 - len(sorted_uts)):
+                fake_uts = sorted_uts[0] - (i + 1) * 1800 # 30 min intervals
                 history[fake_uts] = "0"
             sorted_uts = sorted(history.keys())
             
-        # Keep last 24 points
-        recent_uts = sorted_uts[-24:]
+        # Keep last 48 points
+        recent_uts = sorted_uts[-48:]
         
         with open(aurora_file, "w") as f:
             for u in recent_uts:

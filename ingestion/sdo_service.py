@@ -20,10 +20,11 @@ SDO_MAP = {
     "193": "latest_1024_0193.jpg",
     "211": "latest_1024_0211.jpg",
     "304": "latest_1024_0304.jpg",
+    "131": "latest_1024_0131.jpg",
     "170": "latest_1024_0171.jpg", # Fallback for 170
-    "HMI": "latest_1024_HMII.jpg",
     "HMIB": "latest_1024_HMIB.jpg",
     "HMIIC": "latest_1024_HMIIC.jpg",
+    "HMI": "latest_1024_HMIIC.jpg", # Map generic HMI to Intensity Continuum
 }
 
 def get_sdo_image(path):
@@ -73,15 +74,23 @@ def get_sdo_image(path):
         resp.raise_for_status()
         
         # Process using ImageMagick
-        temp_jpg = f"/tmp/sdo_{wavelength}.jpg"
-        temp_bmp = f"/tmp/sdo_{wavelength}.bmp"
+        # Use PID in temp filenames to avoid race conditions between threaded requests
+        pid = os.getpid()
+        temp_jpg = f"/tmp/sdo_{wavelength}_{pid}.jpg"
+        temp_bmp = f"/tmp/sdo_{wavelength}_{pid}.bmp"
         
         with open(temp_jpg, "wb") as f:
             f.write(resp.content)
             
         # Resize to requested resolution and convert to BMP 24bpp (truecolor)
+        # Force BMP3 to ensure compatibility with HamClock's bmp.cpp
         res_str = f"{resolution}x{resolution}!"
-        subprocess.run(["magick", temp_jpg, "-resize", res_str, "-type", "truecolor", "BMP3:" + temp_bmp], check=True)
+        try:
+            subprocess.run(["magick", temp_jpg, "-resize", res_str, "-type", "truecolor", f"BMP3:{temp_bmp}"], 
+                           check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Magick failed: {e.stderr}")
+            raise
         
         with open(temp_bmp, "rb") as f:
             bmp_data = f.read()
