@@ -12,23 +12,42 @@ logger = logging.getLogger(__name__)
 def get_band_conditions(query):
     """
     Generate band conditions text in HamClock format.
-    Format:
-    Current reliability (9 bands)
-    Parameters summary
-    H1 R80,R40,R30,R20,R17,R15,R12,R10,R6
-    ...
-    H0 R80,...
     """
     tx_lat = float(query.get('TXLAT', [0])[0])
     tx_lng = float(query.get('TXLNG', [0])[0])
     rx_lat = float(query.get('RXLAT', [0])[0])
     rx_lng = float(query.get('RXLNG', [0])[0])
-    mode = query.get('MODE', ['CW'])[0]
-    power = query.get('POWER', ['100W'])[0]
-    toa = query.get('TOA', ['3'])[0]
-    path = query.get('PATH', ['SP'])[0]
     
-    current_utc = time.gmtime().tm_hour
+    # Map Numerical Mode to Names
+    # 38 -> SSB, 19 -> FT8 (based on parity analysis)
+    raw_mode = query.get('MODE', ['CW'])[0]
+    mode_map = {
+        '38': 'SSB',
+        '39': 'USB',
+        '40': 'LSB',
+        '19': 'FT8',
+        '1': 'CW'
+    }
+    mode_name = mode_map.get(raw_mode, raw_mode)
+    
+    # Map Power
+    power = query.get('POW', query.get('POWER', ['100']))[0]
+    power_str = f"{power}W"
+    
+    # Map Path (0 -> SP, 1 -> LP)
+    raw_path = query.get('PATH', ['0'])[0]
+    path_str = "LP" if raw_path == '1' else "SP"
+    
+    # TOA Header Formatting
+    raw_toa = query.get('TOA', ['3'])[0]
+    try:
+        toa_val = float(raw_toa)
+        # Format as integer if possible (3.0 -> 3)
+        toa_hdr = str(int(toa_val)) if toa_val == int(toa_val) else f"{toa_val:.1f}"
+    except:
+        toa_hdr = raw_toa
+
+    current_utc = int(query.get('UTC', [time.gmtime().tm_hour])[0])
     ssn = voacap_service.get_ssn()
     
     bands = [3.5, 7.0, 10.1, 14.0, 18.1, 21.0, 24.9, 28.0, 50.0]
@@ -39,27 +58,15 @@ def get_band_conditions(query):
     def get_rels_for_utc(utc_val):
         rels = []
         for mhz in bands:
-            # We use a modified query for a single point reliability
-            # voacap_service.generate_voacap_response is designed for maps,
-            # but we can call it or extract its core logic.
-            # For now, we'll implement a simple point-to-point reliability calculator
-            # based on the same model in voacap_service or reuse it.
-            
-            # Since generate_voacap_response is quite integrated with map generation,
-            # Let's see if we can extract a helper or just implement a simpler version here.
-            # Reuse logic from voacap_service indirectly by calling it if possible?
-            # No, generate_voacap_response returns a whole map.
-            
-            # I'll implement a point-to-point REL helper here or in voacap_service.
-            rel = calculate_point_reliability(tx_lat, tx_lng, rx_lat, rx_lng, mhz, float(toa), utc_val, ssn)
+            rel = calculate_point_reliability(tx_lat, tx_lng, rx_lat, rx_lng, mhz, float(raw_toa), utc_val, ssn)
             rels.append(f"{rel:.2f}")
         return ",".join(rels)
 
     # Line 1: Current condition
     lines.append(get_rels_for_utc(current_utc))
     
-    # Line 2: Parameters
-    lines.append(f"{power},{mode},TOA>{toa},{path},S={int(ssn)}")
+    # Line 2: Parameters - Match exactly: 50W,SSB,TOA>3,LP,S=97
+    lines.append(f"{power_str},{mode_name},TOA>{toa_hdr},{path_str},S={int(ssn)}")
     
     # Lines 3-26: Hourly forecast (1 to 23, then 0)
     for h in range(1, 24):
