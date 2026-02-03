@@ -9,7 +9,7 @@
 ## Medium Priority: Semi-Static (Upstream Copies)
 - [x] Localize `/ham/HamClock/worldwx/wx.txt` (via `weather_grid_service.py`).
 - [ ] Convert `/ham/HamClock/contests/contests311.txt` to local ingestion (e.g., WA7BNM).
-- [ ] Ingest `/ham/HamClock/dst/dst.txt` (Disturbance Storm Time geomagnetic index) locally.
+- [x] Ingest `/ham/HamClock/dst/dst.txt` (Disturbance Storm Time geomagnetic index) locally.
 - [ ] Derive `/ham/HamClock/cty/cty_wt_mod-ll-dxcc.txt` from local `Big CTY` data.
 
 ## Investigation & Bug Fixes

@@ -26,7 +26,8 @@ DXCC_URL = "https://clearskyinstitute.com/ham/HamClock/cty/cty_wt_mod-ll-dxcc.tx
 ONTA_URL = "https://clearskyinstitute.com/ham/HamClock/ONTA/onta.txt"
 DXPEDS_URL = "https://clearskyinstitute.com/ham/HamClock/dxpeds/dxpeditions.txt"
 CONTESTS_URL = "https://clearskyinstitute.com/ham/HamClock/contests/contests311.txt"
-DST_URL = "https://clearskyinstitute.com/ham/HamClock/dst/dst.txt"
+# Kyoto WDC Dst source
+KYOTO_DST_BASE_URL = "http://wdc.kugi.kyoto-u.ac.jp/dst_realtime"
 DRAP_URL = "https://services.swpc.noaa.gov/json/drap_absorption_stats.json"
 WORLD_WX_URL = "https://clearskyinstitute.com/ham/HamClock/worldwx/wx.txt"
 
@@ -438,6 +439,79 @@ def fetch_dxpeds():
         print("Updated dxpeditions.txt with live data")
     except Exception as e:
         print(f"Error updating DXPeditions: {e}")
+def fetch_dst():
+    """Fetch Disturbance Storm Time (Dst) index from Kyoto WDC and format for HamClock"""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    yymm = now.strftime("%y%m")
+    yyyymm = now.strftime("%Y%m")
+    
+    # Try current month first
+    url = f"{KYOTO_DST_BASE_URL}/presentmonth/dst{yymm}.for.request"
+    print(f"Fetching Dst index from {url}...")
+    
+    try:
+        resp = requests.get(url, timeout=15)
+        if resp.status_code != 200:
+            # Try specific month folder as fallback
+            url = f"{KYOTO_DST_BASE_URL}/{yyyymm}/dst{yymm}.for.request"
+            print(f"Retrying Dst from {url}...")
+            resp = requests.get(url, timeout=15)
+        
+        resp.raise_for_status()
+        lines = resp.text.splitlines()
+        
+        # Kyoto format: 120-byte records
+        # Columns 21-116: 24 hourly values (4-digit integers)
+        # Missing: 9999
+        dst_values = []
+        for line in lines:
+            if not line.startswith('DST'): continue
+            try:
+                year_short = int(line[3:5])
+                month = int(line[5:7])
+                day = int(line[8:10])
+                year_long = int(line[14:16]) * 100 + year_short
+                
+                # Hourly data starts at index 20 (0-indexed)
+                hourly_part = line[20:116]
+                for h in range(24):
+                    val_str = hourly_part[h*4 : (h+1)*4].strip()
+                    if val_str and val_str != '9999':
+                        ts = datetime.datetime(year_long, month, day, h, 0, 0, tzinfo=datetime.timezone.utc)
+                        dst_values.append((ts, int(val_str)))
+            except (ValueError, IndexError):
+                continue
+        
+        if not dst_values:
+            raise ValueError("No valid Dst records parsed")
+            
+        # Sort by time and take last 24 records (HamClock typically expects ~24-48 hours)
+        dst_values.sort(key=lambda x: x[0])
+        
+        dst_dir = os.path.join(OUTPUT_DIR, "dst")
+        if not os.path.exists(dst_dir): os.makedirs(dst_dir)
+        dst_file = os.path.join(dst_dir, "dst.txt")
+        
+        with open(dst_file, "w") as f:
+            for ts, val in dst_values[-24:]:
+                # Format: 2026-02-01T03:00:00 0
+                f.write(f"{ts.strftime('%Y-%m-%dT%H:%M:%S')} {val}\n")
+                
+        print(f"Saved {len(dst_values[-24:])} Dst records to {dst_file}")
+        
+    except Exception as e:
+        print(f"Error fetching Dst from Kyoto: {e}. Checking for fallback...")
+        dst_dir = os.path.join(OUTPUT_DIR, "dst")
+        dst_file = os.path.join(dst_dir, "dst.txt")
+        if not os.path.exists(dst_file):
+            # Create minimal dummy data to prevent client crash
+            now = datetime.datetime.now(datetime.timezone.utc)
+            with open(dst_file, "w") as f:
+                for h in range(24):
+                    ts = now - datetime.timedelta(hours=23-h)
+                    ts = ts.replace(minute=0, second=0, microsecond=0)
+                    f.write(f"{ts.strftime('%Y-%m-%dT%H:%M:%S')} 0\n")
+            print("Created dummy Dst data as fallback")
 
 def fetch_static_file(url, filename):
     """Fetch a static file and save it to the output directory"""
@@ -477,6 +551,7 @@ def fetch_all():
     fetch_aurora()
     fetch_onta()
     fetch_dxpeds()
+    fetch_dst()
     
     # Update DRAP (New dynamic service)
     print("Fetching DRAP absorption data...")
@@ -505,7 +580,6 @@ def fetch_all():
     fetch_static_file(DXCC_URL, "cty/cty_wt_mod-ll-dxcc.txt")
     # ONTA and DXPeds are now dynamic
     fetch_static_file(CONTESTS_URL, "contests/contests311.txt")
-    fetch_static_file(DST_URL, "dst/dst.txt")
 
     print("\nFetch cycle complete.")
 
