@@ -9,7 +9,7 @@
 ## Medium Priority: Semi-Static (Upstream Copies)
 - [x] Localize `/ham/HamClock/worldwx/wx.txt` (via `weather_grid_service.py`).
 - [ ] Convert `/ham/HamClock/contests/contests311.txt` to local ingestion (e.g., WA7BNM).
-- [ ] Calculate `/ham/HamClock/dst/dst.txt` locally from TZ database.
+- [ ] Ingest `/ham/HamClock/dst/dst.txt` (Disturbance Storm Time geomagnetic index) locally.
 - [ ] Derive `/ham/HamClock/cty/cty_wt_mod-ll-dxcc.txt` from local `Big CTY` data.
 
 ## Investigation & Bug Fixes
@@ -20,5 +20,5 @@
 
 ## Next Steps
 1. Investigate VOACAP area map parity (Binary structure/Blending).
-2. Implement local DST calculation.
+2. Implement local Dst (Disturbance Storm Time) index ingestion.
 3. Scale up Weather Grid coverage if needed.

@@ -163,9 +163,12 @@ def generate_voacap_response(query, map_type="REL"):
         # Original server often returns two chunks.
         
         for is_alternate in [False, True]:
-            # Alternate map is often a offset UTC or just a secondary view
-            effective_utc = (utc + 12) % 24 if is_alternate else utc
-            s_dec_rad, s_lng_rad = get_solar_pos(year, month, 15, effective_utc)
+            # Original HamClock logic for Area maps:
+            # Map 0 is the full-intensity propagation map for the requested UTC.
+            # Map 1 is exactly 50% intensity (dimmed) if it's a REL map, or used for night parity.
+            # Based on parity analysis, Map 1 is a dimmed version of Map 0.
+            
+            s_dec_rad, s_lng_rad = get_solar_pos(year, month, 15, utc)
             cos_s_dec = math.cos(s_dec_rad)
             sin_s_dec = math.sin(s_dec_rad)
             
@@ -373,32 +376,12 @@ def generate_voacap_response(query, map_type="REL"):
                         else:
                             c565 = REL_CACHE[min(1000, max(0, int(rel_v * 10)))]
 
-                    # --- Phase 6: Base Map Integration ---
-                    if COUNTRIES_MAP and TERRAIN_MAP:
-                        base_c = COUNTRIES_MAP[idx]
-                        terrain_c = TERRAIN_MAP[idx]
-                        
-                        # Use black for borders to match GT parity
-                        if base_c == 0xFFFF:
-                            c565 = 0x0000 
-                        else:
-                            # Alpha blend propagation color with terrain
-                            # Increase propagation opacity for better visual "pop"
-                            alpha = 0.82
-                            
-                            r1 = (c565 >> 11) & 0x1F
-                            g1 = (c565 >> 5) & 0x3F
-                            b1 = c565 & 0x1F
-                            
-                            r2 = (terrain_c >> 11) & 0x1F
-                            g2 = (terrain_c >> 5) & 0x3F
-                            b2 = terrain_c & 0x1F
-                            
-                            r = int(r1 * alpha + r2 * (1 - alpha))
-                            g = int(g1 * alpha + g2 * (1 - alpha))
-                            b = int(b1 * alpha + b2 * (1 - alpha))
-                            
-                            c565 = (r << 11) | (g << 5) | b
+                    if is_alternate:
+                        # Dim by 50% for Map 1 to match parity
+                        r = (c565 >> 11) & 0x1F
+                        g = (c565 >> 5) & 0x3F
+                        b = c565 & 0x1F
+                        c565 = ((r >> 1) << 11) | ((g >> 1) << 5) | (b >> 1)
                     
                     pixel_data[row_off + x*2] = c565 & 0xFF
                     pixel_data[row_off + x*2 + 1] = (c565 >> 8) & 0xFF

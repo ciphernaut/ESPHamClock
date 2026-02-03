@@ -69,11 +69,14 @@ def fetch_and_parse_solar_indices():
     # HamClock usually shows the current month clearly.
     ssn_file = os.path.join(OUTPUT_DIR, "ssn", "ssn-31.txt")
     with open(ssn_file, "w") as f:
-        # ORIGINAL Parity Note: HamClock expects exactly 31 records for a 31-day history.
-        # It often includes TODAY if data is available early.
-        for record in ssn_records[-31:]:
+        # Pad if we have less than 31
+        final_ssn = ssn_records
+        while len(final_ssn) < 31:
+            final_ssn.insert(0, final_ssn[0] if final_ssn else "0")
+        
+        for record in final_ssn[-31:]:
             f.write(f"{record}\n")
-    print(f"Saved {len(ssn_records[-31:])} SSN records to {ssn_file}")
+    print(f"Saved {len(final_ssn[-31:])} SSN records to {ssn_file}")
 
     # Save Solar Flux (last 99 values - matching SFLUX_NV)
     # Original expects 3 samples per day for 33 days.
@@ -281,12 +284,9 @@ def fetch_solar_wind_and_bz():
             if closest_t:
                 m = mag_data.get(closest_t)
                 if m and m[1] is not None and m[2] is not None and m[3] is not None and m[6] is not None:
-                    # Spacing: 1769944800 (10) + 4 spaces + col1 + 3 spaces + col2 + 3 spaces + col3 + 4 spaces + col4
-                    c1 = f"{float(m[1]):.1f}"
-                    c2 = f"{float(m[2]):.1f}"
-                    c3 = f"{float(m[3]):.1f}"
-                    c4 = f"{float(m[6]):.1f}"
-                    bz_final.append(f"{target_ts}    {c1}   {c2}   {c3}    {c4}")
+                    # Spacing: UNIX(10) + 3 + Bx(4) + 3 + By(4) + 3 + Bz(4) + 4 + Bt(4)
+                    # Precision: .1f
+                    bz_final.append(f"{target_ts}   {float(m[1]):>4.1f}   {float(m[2]):>4.1f}   {float(m[3]):>4.1f}    {float(m[6]):>4.1f}")
                 else:
                     bz_final.append(f"{target_ts}    0.0   0.0   0.0    0.0")
             else:
