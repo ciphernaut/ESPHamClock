@@ -319,36 +319,59 @@ def fetch_solar_wind_and_bz():
         traceback.print_exc()
 
 def fetch_noaa_scales():
-    """Fetch current R, S, G scales"""
-    print(f"Fetching NOAA scales...")
+    """Fetch current R, S, G scales and forecasts for 4-day coverage"""
+    print(f"Fetching NOAA scales from {NOAA_SCALES_URL}...")
     try:
         resp = requests.get(NOAA_SCALES_URL, timeout=10)
         resp.raise_for_status()
         data = resp.json()
         
-        # data format: {"0": {"G": {"value": 0, ...}, "S": {...}, "R": {...}}, ...}
-        # We want the current values
-        current = data.get("0", {})
-        r = current.get("R", {}).get("value", 0)
-        s = current.get("S", {}).get("value", 0)
-        g = current.get("G", {}).get("value", 0)
+        # We need current + 3 days forecast = 4 values per row
+        # Map: index "0" is current, "1", "2", "3" are forecasts
+        indices = ["0", "1", "2", "3"]
+        r_vals = []
+        s_vals = []
+        g_vals = []
         
+        for idx in indices:
+            day_data = data.get(idx, {})
+            # Helper to get scale value, default 0 if null/missing
+            get_val = lambda d, k: int(d.get(k, {}).get("Scale", 0) or 0)
+            r_vals.append(get_val(day_data, "R"))
+            s_vals.append(get_val(day_data, "S"))
+            g_vals.append(get_val(day_data, "G"))
+            
         scales_file = os.path.join(OUTPUT_DIR, "NOAASpaceWX", "noaaswx.txt")
         with open(scales_file, "w") as f:
-            # exact spacing for parity
-            f.write(f"R  {r} 0 0 0\n")
-            f.write(f"S  {s} 0 0 0\n")
-            f.write(f"G  {g} 0 0 0\n")
+            # Format: Letter  Val0 Val1 Val2 Val3
+            f.write(f"R  {' '.join(map(str, r_vals))}\n")
+            f.write(f"S  {' '.join(map(str, s_vals))}\n")
+            f.write(f"G  {' '.join(map(str, g_vals))}\n")
             
-        print(f"Saved NOAA scales to {scales_file}")
+        print(f"Saved NOAA scales (4 days) to {scales_file}")
         
-        # Add rank2_coeffs.txt - original has it, we should too
+        # Populate authentic rank2_coeffs.txt
         rank_file = os.path.join(OUTPUT_DIR, "NOAASpaceWX", "rank2_coeffs.txt")
-        if not os.path.exists(rank_file):
-            with open(rank_file, "w") as f:
-                f.write("# index a b c\n")
-                for i in range(10):
-                    f.write(f"{i} 0 1 0\n")
+        coeffs = [
+            "0       0        0.05    -6              // Sunspot_N      60 => -3       200 => 4",
+            "1       0        1e6     -2              // X-Ray          (C)1e-6 => -2  (M)1e-5 => 8",
+            "2       0        0.1     -15             // Solar_Flux",
+            "3       0        3.2     -8.8            // Planetary_K    1 => -5.6   4 =>  4   9 => 20",
+            "4       0        1       -2              // Solar_Wind",
+            "5       0        1       -20             // DRAP",
+            "6       0        -0.8    -2              // Bz_Bt          0 => -2         -10 => 6",
+            "7       0        3       -3              // NOAA_SpcWx     0 => -3   1 => 0  3 => 6",
+            "8       0        0.16    -6              // AURORA         50 => 2         100 => 10",
+            "9   -0.04       -0.2      3              // DST           -10 => 1  0 => 3  5 => 1"
+        ]
+        with open(rank_file, "w") as f:
+            f.write("# y = ax^2 + bx + c, where x = raw space weather value, y = small integer for ranking roughly -10..5\n")
+            f.write("# N.B. column 1 is SPCWX_t index and must be in this order.\n")
+            f.write("# hint: https://www.analyzemath.com/parabola/three_points_para_calc.html\n")
+            f.write("#       a        b       c\n")
+            for c in coeffs:
+                f.write(f"{c}\n")
+        print(f"Saved authentic coefficients to {rank_file}")
     except Exception as e:
         print(f"Error fetching NOAA scales: {e}")
 

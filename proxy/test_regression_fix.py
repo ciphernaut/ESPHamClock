@@ -39,11 +39,38 @@ def test_coeff_variance():
     print(f"  Coeff Case: {res.status} (Expected: Drift) - {res.message}")
     assert res.status == ParityResult.DRIFT
 
+def test_noaaswx_parity():
+    print("\nTesting NOAASpaceWX/noaaswx.txt Parity...")
+    checker = get_checker("noaaswx.txt", [])
+    
+    # Authentic format: Letter  Val0 Val1 Val2 Val3
+    orig = b"R  0 0 0 0\nS  0 0 0 0\nG  0 0 0 1\n"
+    local = b"R  0 0 0 0\nS  0 0 0 0\nG  0 0 0 1\n"
+    
+    res = checker.compare("noaaswx.txt", orig, local)
+    print(f"  noaaswx Case: {res.status} (Expected: Match)")
+    assert res.status == ParityResult.MATCH
+
+def test_rank2_coeffs_parity():
+    print("\nTesting NOAASpaceWX/rank2_coeffs.txt Parity...")
+    checker = get_checker("rank2_coeffs.txt", [])
+    
+    # First few lines of authentic file
+    orig = b"# y = ax^2 + bx + c, where x = raw space weather value, y = small integer for ranking roughly -10..5\n0       0        0.05    -6              // Sunspot_N      60 => -3       200 => 4\n"
+    local = b"# y = ax^2 + bx + c, where x = raw space weather value, y = small integer for ranking roughly -10..5\n0       0        0.05    -6              // Sunspot_N      60 => -3       200 => 4\n"
+    
+    res = checker.compare("rank2_coeffs.txt", orig, local)
+    print(f"  rank2_coeffs Case: {res.status} (Expected: Match)")
+    assert res.status == ParityResult.MATCH
+
 if __name__ == "__main__":
+    from parity_checker import get_checker # Import inside __main__ to be available
     try:
         test_weather_variance()
         test_solar_variance()
         test_coeff_variance()
+        test_noaaswx_parity()
+        test_rank2_coeffs_parity()
         print("\nAll regression tests passed!")
     except AssertionError as e:
         print(f"\nTest failed!")
