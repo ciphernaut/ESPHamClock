@@ -7,9 +7,9 @@ import datetime
 import re
 import xml.etree.ElementTree as ET
 try:
-    from ingestion import onta_service, dxped_service, drap_service, weather_grid_service
+    from ingestion import onta_service, dxped_service, drap_service, weather_grid_service, cty_service
 except ImportError:
-    import onta_service, dxped_service, drap_service, weather_grid_service
+    import onta_service, dxped_service, drap_service, weather_grid_service, cty_service
 
 # NOAA SWPC endpoints
 SOLAR_INDICES_URL = "https://services.swpc.noaa.gov/text/daily-solar-indices.txt"
@@ -711,7 +711,14 @@ def fetch_all():
     except Exception as e:
         print(f"Error generating weather grid: {e}")
 
-    fetch_static_file(DXCC_URL, "cty/cty_wt_mod-ll-dxcc.txt")
+    # Derive DXCC file locally
+    print("Deriving local DXCC data...")
+    try:
+        cty_service.fetch_and_process_cty()
+    except Exception as e:
+        print(f"Error deriving DXCC: {e}")
+        # Fallback to static if derivation fails completely (though cty_service has its own fallbacks)
+        fetch_static_file(DXCC_URL, "cty/cty_wt_mod-ll-dxcc.txt")
 
     print("\nFetch cycle complete.")
 

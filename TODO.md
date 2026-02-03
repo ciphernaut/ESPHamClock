@@ -10,7 +10,7 @@
 - [x] Localize `/ham/HamClock/worldwx/wx.txt` (via `weather_grid_service.py`).
 - [x] Convert `/ham/HamClock/contests/contests311.txt` to local ingestion (WA7BNM RSS).
 - [x] Ingest `/ham/HamClock/dst/dst.txt` (Disturbance Storm Time geomagnetic index) locally.
-- [ ] Derive `/ham/HamClock/cty/cty_wt_mod-ll-dxcc.txt` from local `Big CTY` data.
+- [x] Derive `/ham/HamClock/cty/cty_wt_mod-ll-dxcc.txt` from local `Big CTY` data.
 
 ## Investigation & Bug Fixes
 - [x] **Fix**: Integrate `drap_service.py` into `noaa_fetcher.py` (Complete).
@@ -19,8 +19,5 @@
 - [x] **Investigate**: Repair 0% parity for `/ham/HamClock/solar-wind/swind-24hr.txt` (Formatting Fixed).
 
 ## Next Steps
-1. Implement local Dst (Disturbance Storm Time) index ingestion (Kyoto WDC).
-2. Convert `/ham/HamClock/contests/contests311.txt` to local ingestion (WA7BNM).
-3. Derive `/ham/HamClock/cty/cty_wt_mod-ll-dxcc.txt` from local Big CTY.
-4. Address world weather parity issues (prevailing stats via `wttr.in`).
-5. Improve SDO image scaling/quality for better parity.
+3. Address world weather parity issues (prevailing stats via `wttr.in`).
+4. Improve SDO image scaling/quality for better parity.
