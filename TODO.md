@@ -1,7 +1,7 @@
 # HamClock Data Source Parity TODO
 
 ## High Priority: Truly Static/Shims
-- [ ] Convert `/ham/HamClock/fetchBandConditions.pl` from shim to dynamic model (SSN/Solar Flux based).
+- [x] Convert `/ham/HamClock/fetchBandConditions.pl` from shim to dynamic model (SSN/Solar Flux based).
 - [x] Implement dynamic routing for `/ham/HamClock/fetchONTA.pl` using `onta_service.py`.
 - [x] Implement dynamic routing for `/ham/HamClock/fetchAurora.pl` using `aurora.txt` (via `noaa_fetcher.py`).
 - [x] Implement dynamic routing for `/ham/HamClock/fetchDXPeds.pl` using `dxpeditions.txt` (via `dxped_service.py`).
@@ -19,7 +19,6 @@
 - [x] **Investigate**: Repair 0% parity for `/ham/HamClock/solar-wind/swind-24hr.txt` (Formatting Fixed).
 
 ## Next Steps
-1. Implement dynamic model for Band Conditions (Solar/Flux based).
-2. Investigate VOACAP area map parity (Binary structure/Blending).
-3. Implement local DST calculation.
-4. Scale up Weather Grid coverage if needed.
+1. Investigate VOACAP area map parity (Binary structure/Blending).
+2. Implement local DST calculation.
+3. Scale up Weather Grid coverage if needed.
