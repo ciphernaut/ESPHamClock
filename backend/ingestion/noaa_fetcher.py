@@ -23,16 +23,12 @@ NOAA_SCALES_URL = "https://services.swpc.noaa.gov/products/noaa-scales.json"
 # For simplicity, we'll fetch the ovation forecast or similar if possible.
 AURORA_URL = "https://services.swpc.noaa.gov/json/ovation_aurora_latest.json"
 DRAP_URL = "https://services.swpc.noaa.gov/text/drap_global_frequencies.txt"
-DXCC_URL = "https://clearskyinstitute.com/ham/HamClock/cty/cty_wt_mod-ll-dxcc.txt"
-ONTA_URL = "https://clearskyinstitute.com/ham/HamClock/ONTA/onta.txt"
-DXPEDS_URL = "https://clearskyinstitute.com/ham/HamClock/dxpeds/dxpeditions.txt"
-CONTESTS_URL = "https://clearskyinstitute.com/ham/HamClock/contests/contests311.txt"
-# Kyoto WDC Dst source
+
+# Standalone Primary Sources
+DXCC_FALLBACK_URL = "https://clearskyinstitute.com/ham/HamClock/cty/cty_wt_mod-ll-dxcc.txt"
 KYOTO_DST_BASE_URL = "http://wdc.kugi.kyoto-u.ac.jp/dst_realtime"
-# WA7BNM Contest RSS
 CONTEST_RSS_URL = "https://www.contestcalendar.com/calendar.rss"
-DRAP_URL = "https://services.swpc.noaa.gov/json/drap_absorption_stats.json"
-WORLD_WX_URL = "https://clearskyinstitute.com/ham/HamClock/worldwx/wx.txt"
+DRAP_STATS_URL = "https://services.swpc.noaa.gov/json/drap_absorption_stats.json"
 
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "processed_data")
 
@@ -741,7 +737,7 @@ def fetch_all():
     except Exception as e:
         print(f"Error deriving DXCC: {e}")
         # Fallback to static if derivation fails completely (though cty_service has its own fallbacks)
-        fetch_static_file(DXCC_URL, "cty/cty_wt_mod-ll-dxcc.txt")
+        fetch_static_file(DXCC_FALLBACK_URL, "cty/cty_wt_mod-ll-dxcc.txt")
 
     print("\nFetch cycle complete.")
 
