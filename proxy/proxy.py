@@ -38,18 +38,22 @@ class ShadowProxy(http.server.SimpleHTTPRequestHandler):
             
             base_path = path.split('?')[0]
             entry = summary.get(base_path, {})
-            stats = entry.get("_stats", {"matches": 0, "total": 0, "drifts": 0})
+            stats = entry.get("_stats", {"matches": 0, "total": 0, "drifts": 0, "strict_matches": 0})
             
             stats["total"] += 1
             if match_result.status in [parity_checker.ParityResult.MATCH, parity_checker.ParityResult.DRIFT]:
                 stats["matches"] += 1
             
+            if match_result.status == parity_checker.ParityResult.MATCH:
+                stats["strict_matches"] = stats.get("strict_matches", 0) + 1
+
             if match_result.status == parity_checker.ParityResult.DRIFT:
                 stats["drifts"] = stats.get("drifts", 0) + 1
             
             summary[base_path] = {
                 "status": match_result.status,
                 "parity": f"{stats['matches']}/{stats['total']}",
+                "strict_parity": f"{stats.get('strict_matches', 0)}/{stats['total']}",
                 "drift_count": stats.get("drifts", 0),
                 "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "message": match_result.message,
@@ -200,7 +204,7 @@ class ShadowProxy(http.server.SimpleHTTPRequestHandler):
                 with open(PARITY_SUMMARY, "r") as f:
                     data = json.load(f)
                 
-                html += "<table><tr><th>Endpoint</th><th>Last Result</th><th>Parity (Matches/Total)</th><th>Drifted</th><th>Last Checked</th></tr>"
+                html += "<table><tr><th>Endpoint</th><th>Last Result</th><th>Parity (Matches/Total)</th><th>Strict Parity</th><th>Drifted</th><th>Last Checked</th></tr>"
                 # Sort endpoints by name
                 for endpoint in sorted(data.keys()):
                     info = data[endpoint]
@@ -208,6 +212,7 @@ class ShadowProxy(http.server.SimpleHTTPRequestHandler):
                     status_class = status.lower()
                     html += f"<tr><td>{endpoint}</td><td class='{status_class}'>{status}</td>"
                     html += f"<td>{info.get('parity')}</td>"
+                    html += f"<td>{info.get('strict_parity', '-')}</td>"
                     html += f"<td>{info.get('drift_count', 0)}</td>"
                     html += f"<td>{info.get('timestamp')}</td></tr>"
                 html += "</table>"
