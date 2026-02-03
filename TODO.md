@@ -14,11 +14,13 @@
 
 ## Investigation & Bug Fixes
 - [x] **Fix**: Integrate `drap_service.py` into `noaa_fetcher.py` (Complete).
-- [ ] **Investigate**: Repair 0% parity for `/ham/HamClock/fetchVOACAPArea.pl`.
+- [x] **Fix**: achieved 100% parity for `/ham/HamClock/fetchVOACAPArea.pl` (Raw pixels & Map 1 dimming).
 - [x] **Investigate**: Repair 0% parity for `/ham/HamClock/SDO/*.bmp.z` (Header/Patch Fixed).
 - [x] **Investigate**: Repair 0% parity for `/ham/HamClock/solar-wind/swind-24hr.txt` (Formatting Fixed).
 
 ## Next Steps
-1. Investigate VOACAP area map parity (Binary structure/Blending).
-2. Implement local Dst (Disturbance Storm Time) index ingestion.
-3. Scale up Weather Grid coverage if needed.
+1. Implement local Dst (Disturbance Storm Time) index ingestion (Kyoto WDC).
+2. Convert `/ham/HamClock/contests/contests311.txt` to local ingestion (WA7BNM).
+3. Derive `/ham/HamClock/cty/cty_wt_mod-ll-dxcc.txt` from local Big CTY.
+4. Address world weather parity issues (prevailing stats via `wttr.in`).
+5. Improve SDO image scaling/quality for better parity.
