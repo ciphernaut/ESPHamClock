@@ -46,3 +46,7 @@ __pycache__/
 .DS_Store
 Thumbs.db
 backend/processed_data
+local_voacap_v2.bin.map0.decompressed
+.gitignore
+.gitignore
+local_voacap_v2.bin
