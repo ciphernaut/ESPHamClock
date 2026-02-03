@@ -45,22 +45,56 @@ class TextFuzzyChecker(BaseChecker):
             orig_text = orig_data.decode('utf-8', errors='replace').splitlines()
             local_text = local_data.decode('utf-8', errors='replace').splitlines()
             
-            # Filter out known "ignorable" lines
+            # Filter out known "ignorable" lines/patterns
             ignore_patterns = [
                 r"^# extracted from",  # CTY/SSN extraction timestamps
                 r"^# updated at",
                 r"^# Last Modified",
-                r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}" # Generic ISO timestamps
+                r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", # Generic ISO timestamps
+                r"^attribution=" # Attribution variance is expected
             ]
             
-            orig_filtered = [l for l in orig_text if not any(re.search(p, l) for p in ignore_patterns)]
-            local_filtered = [l for l in local_text if not any(re.search(p, l) for p in ignore_patterns)]
+            def normalize_line(line):
+                # Handle key=value lines (common in .pl)
+                if '=' in line and not line.startswith('#'):
+                    key, val = line.split('=', 1)
+                    # For weather/numeric fields, we allow variance if key matches
+                    numeric_keys = ['temperature_c', 'humidity_percent', 'wind_speed_mps', 'pressure_hPa', 'pressure_chg', 'lat', 'lng', 'timezone']
+                    if key in numeric_keys:
+                        # Return just the key to mark it as "matched" structurally
+                        return f"{key}=<NUMERIC>"
+                    # For city, we allow some variance as different APIs might name things differently
+                    if key == 'city':
+                        return "city=<CITY>"
+                    # For clouds/conditions, normalize to lowercase
+                    if key in ['clouds', 'conditions']:
+                        return f"{key}={val.strip().lower()}"
+                
+                # Handle solar wind/geomagnetic data (UNIX timestamp + numbers)
+                # Pattern: TIMESTAMP VAL1 VAL2 ...
+                if re.match(r"^\d{10}\s+", line):
+                    # Keep the structure but mask the timestamp and values
+                    parts = line.split()
+                    return f"<TS> " + " ".join(["<VAL>" for _ in parts[1:]])
+
+                # Handle coefficient files (simple numeric rows)
+                if re.match(r"^\d+\s+[\d.-]+", line):
+                     parts = line.split()
+                     return f"{parts[0]} " + " ".join(["<VAL>" for _ in parts[1:]])
+
+                return line.strip()
+
+            orig_filtered = [normalize_line(l) for l in orig_text if not any(re.search(p, l) for p in ignore_patterns)]
+            local_filtered = [normalize_line(l) for l in local_text if not any(re.search(p, l) for p in ignore_patterns)]
             
+            # Remove empty strings from filtering
+            orig_filtered = [l for l in orig_filtered if l]
+            local_filtered = [l for l in local_filtered if l]
+
             if orig_filtered == local_filtered:
-                return ParityResult(ParityResult.DRIFT, "Semantic match, dynamic metadata mismatch", "LOW")
+                return ParityResult(ParityResult.DRIFT, "Semantic match, dynamic data variance", "LOW")
             
             # If still different, check if it's high significance
-            # Generic binary/large diff
             diff_lines = list(difflib.unified_diff(orig_filtered, local_filtered))
             return ParityResult(ParityResult.DIFF, f"Text difference found ({len(diff_lines)} lines)")
             

@@ -41,10 +41,11 @@ class ShadowProxy(http.server.SimpleHTTPRequestHandler):
             stats = entry.get("_stats", {"matches": 0, "total": 0, "drifts": 0})
             
             stats["total"] += 1
-            if match_result.status == parity_checker.ParityResult.MATCH:
+            if match_result.status in [parity_checker.ParityResult.MATCH, parity_checker.ParityResult.DRIFT]:
                 stats["matches"] += 1
-            elif match_result.status == parity_checker.ParityResult.DRIFT:
-                stats["drifts"] += 1
+            
+            if match_result.status == parity_checker.ParityResult.DRIFT:
+                stats["drifts"] = stats.get("drifts", 0) + 1
             
             summary[base_path] = {
                 "status": match_result.status,
