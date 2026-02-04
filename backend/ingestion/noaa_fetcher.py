@@ -164,50 +164,53 @@ def fetch_xray():
         resp.raise_for_status()
         data = resp.json()
         
-        # We need 0.05-0.4nm (short) and 0.1-0.8nm (long) flux
-        # HamClock format: YYYY MM DD HHMM  00000  00000  flux_short  flux_long
-        # Sample: 2026  1 29  0748   00000  00000     1.89e-08    6.82e-07
-        
-        short_flux = {}
-        long_flux = {}
+        # Group by energy and then by timestamp
+        # { 'energy' : { uts: flux } }
+        flux_data = {'0.05-0.4nm': {}, '0.1-0.8nm': {}}
         
         for entry in data:
             time_tag = entry['time_tag'].replace('Z', '')
-            # Parse YYYY-MM-DDTHH:MM:SS
-            dt = datetime.datetime.strptime(time_tag, "%Y-%m-%dT%H:%M:%S")
-            # HamClock samples at 10-min intervals ending in 5
-            if dt.minute % 10 != 5:
-                continue
-                
-            ts_key = dt.strftime("%Y %m %d %H%M")
-            if entry.get('energy') == '0.05-0.4nm':
-                short_flux[ts_key] = entry['flux']
-            elif entry.get('energy') == '0.1-0.8nm':
-                long_flux[ts_key] = entry['flux']
+            dt = datetime.datetime.strptime(time_tag, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=datetime.timezone.utc)
+            uts = int(dt.timestamp())
+            energy = entry.get('energy')
+            if energy in flux_data:
+                flux_data[energy][uts] = entry['flux']
         
-        # Merge and format
+        # Generate 150 target points (XRAY_NV), 10 minutes apart, ending "now"
+        # We target the nearest 10-minute slot ending in 5 to match HamClock convention
+        now_ts = int(time.time())
+        latest_sample_uts = (now_ts // 600) * 600 + 300
+        if latest_sample_uts > now_ts:
+            latest_sample_uts -= 600
+            
         records = []
-        all_keys = sorted(list(set(short_flux.keys()) | set(long_flux.keys())))
-        for k in all_keys:
-            s_val = short_flux.get(k, 0.0)
-            l_val = long_flux.get(k, 0.0)
+        for i in range(150):
+            target_uts = latest_sample_uts - (149 - i) * 600
+            
+            # Find closest available flux for both energy levels
+            vals = []
+            for energy in ['0.05-0.4nm', '0.1-0.8nm']:
+                best_uts = None
+                min_diff = 601 # Max diff 10 mins
+                for av_uts in flux_data[energy].keys():
+                    diff = abs(av_uts - target_uts)
+                    if diff < min_diff:
+                        min_diff = diff
+                        best_uts = av_uts
+                
+                if best_uts is not None:
+                    vals.append(flux_data[energy][best_uts])
+                else:
+                    vals.append(0.0)
+            
             # Format: 2026  2  1  1105   00000  00000     1.99e-06    1.72e-05
-            # Note: 2 spaces between year/month/day/time.
-            parts = k.split() # YYYY MM DD HHMM
-            # The original has a very specific space alignment:
-            # 2026  2  1  1232
-            # 0-3: year, 4-5: spaces, 6: month(1), 7-8: spaces, 9: day(1), 10-11: spaces, 12-15: time(4)
-            # If month is 2 digits, it likely takes pos 5-6.
-            formatted = f"{parts[0]:4} {int(parts[1]):>2} {int(parts[2]):>2}  {parts[3]:04}   00000  00000     {s_val:8.2e}    {l_val:8.2e}"
+            dt = datetime.datetime.fromtimestamp(target_uts, tz=datetime.timezone.utc)
+            y, m, d = dt.year, dt.month, dt.day
+            hm = dt.strftime("%H%M")
+            formatted = f"{y:4} {m:>2} {d:>2}  {hm:04}   00000  00000     {vals[0]:8.2e}    {vals[1]:8.2e}"
             records.append(formatted)
         
         xray_file = os.path.join(OUTPUT_DIR, "xray", "xray.txt")
-        # HamClock client specifically requires 150 records (25 hours)
-        if len(records) > 150:
-            records = records[-150:]
-        elif len(records) < 150:
-            print(f"Warning: Only found {len(records)} X-Ray records (need 150).")
-
         with open(xray_file, "w") as f:
             for record in records:
                 f.write(f"{record}\n")
