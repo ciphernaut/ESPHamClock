@@ -71,6 +71,18 @@ curl http://localhost:8081/                           # Web client interface
 curl http://localhost:9085/                           # Proxy interface
 ```
 
+### Environment-Specific Verification (Dual-Client)
+In this environment, a second HamClock client (VK4SGE) is running, pointing at the original server. This allows for live parity checking via REST APIs.
+- **Our Client REST API**: `http://localhost:8080/`
+- **Original Client REST API**: `http://localhost:8083/`
+- **VK4SGE Live View**: `http://localhost:8084/live.html`
+
+You can compare endpoints (e.g., `get_voacap.txt`) between the two to trigger fresh readings or reconcile data:
+- Ours: `http://localhost:8080/get_voacap.txt`
+- Original: `http://localhost:8083/get_voacap.txt`
+
+Use `python3 proxy/compare_v2.py` for automated reconciliation.
+
 ## Code Style Guidelines
 
 ### Python (Backend Services)
@@ -231,6 +243,8 @@ tail -f logs/scheduler.log     # Data scheduler logs
 - Backend API: 9086
 - Shadow Proxy: 9085  
 - Web Client: 8081
+- Test Client REST (Mine): 8080
+- Original Client REST: 8083
 
 ## Testing Individual Services
 
