@@ -275,7 +275,7 @@ def format_for_hamclock(data, lat, lng):
             f"timezone={timezone}"
         ]
         
-        return "\n".join(lines)
+        return "\n".join(lines) + "\n"
     except Exception as e:
         logger.error(f"Error formatting weather: {e}")
         return ""
