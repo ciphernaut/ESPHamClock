@@ -81,7 +81,7 @@ class ShadowProxy(http.server.SimpleHTTPRequestHandler):
             return 502, [], str(e).encode()
 
     def do_GET(self):
-        if self.path == "/parity":
+        if self.path.startswith("/parity"):
             self.handle_parity()
             return
 

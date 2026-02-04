@@ -47,7 +47,7 @@ def fetch_batch_weather(coords_batch):
     params = {
         "latitude": ",".join(lats),
         "longitude": ",".join(lngs),
-        "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,surface_pressure,weather_code",
+        "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,pressure_msl,weather_code",
         "timezone": "GMT"
     }
     
@@ -70,7 +70,8 @@ def fetch_batch_weather(coords_batch):
             hum = current.get("relative_humidity_2m", 50)
             wind_speed = current.get("wind_speed_10m", 0) / 3.6 # km/h to m/s
             wind_dir = current.get("wind_direction_10m", 0)
-            pressure = current.get("surface_pressure", 1013) * 0.750062 # hPa to mmHg
+            # Use hPa (msl) directly to match original server's behavior (client expects hPa)
+            pressure = current.get("pressure_msl", 1013)
             condition = map_wmo_to_hamclock(current.get("weather_code", 0))
             tz_offset = int(round(lng / 15.0) * 3600)
             
@@ -155,7 +156,7 @@ def generate_weather_grid():
         if not p:
             p = {
                 "lat": lat, "lng": lng, "temp": 0.0, "hum": 50.0,
-                "wind_speed": 0.0, "wind_dir": 0.0, "pressure": 760.0,
+                "wind_speed": 0.0, "wind_dir": 0.0, "pressure": 1013.0,
                 "condition": "Clear", "tz": int(round(lng / 15.0) * 3600)
             }
             
@@ -166,7 +167,21 @@ def generate_weather_grid():
         line = f"{p['lat']:>7} {p['lng']:>7} {p['temp']:>7.1f} {p['hum']:>7.1f} {p['wind_speed']:>7.1f} {p['wind_dir']:>7.1f} {p['pressure']:>7.1f} {p['condition']:<12} {p['tz']:>7}"
         lines.append(line)
         
-    return "\n".join(lines) + "\n"
+    grid_str = "\n".join(lines) + "\n"
+    
+    # Write to file
+    grid_file = os.path.join(CACHE_DIR, "wx.txt")
+    try:
+        with open(grid_file, 'w') as f:
+            f.write(grid_str)
+        logger.info(f"Successfully updated weather grid: {grid_file}")
+    except Exception as e:
+        logger.error(f"Error writing grid file: {e}")
+        
+    return grid_str
 
 if __name__ == "__main__":
-    print(generate_weather_grid()[:500])
+    logging.basicConfig(level=logging.INFO)
+    grid = generate_weather_grid()
+    print(grid[:500])
+    print(f"Total lines: {len(grid.splitlines())}")
