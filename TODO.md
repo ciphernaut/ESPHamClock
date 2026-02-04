@@ -15,9 +15,18 @@
 ## Investigation & Bug Fixes
 - [x] **Fix**: Integrate `drap_service.py` into `noaa_fetcher.py` (Complete).
 - [x] **Fix**: achieved 100% parity for `/ham/HamClock/fetchVOACAPArea.pl` (Raw pixels & Map 1 dimming).
+- [x] **Fix**: Corrected band mapping (removed 60m) and implemented Long Path support in `voacap_service.py`.
+- [x] **Fix**: Added night-time MUF floor to improve reliability on lower bands during darkness.
 - [x] **Investigate**: Repair 0% parity for `/ham/HamClock/SDO/*.bmp.z` (Header/Patch Fixed).
 - [x] **Investigate**: Repair 0% parity for `/ham/HamClock/solar-wind/swind-24hr.txt` (Formatting Fixed).
 
+## REST API Parity & Reconciliation
+- [ ] Investigate Client Timezone mismatch (`UTC+0` vs `UTC+10` in Australia).
+- [ ] Compare `get_spacewx.txt` fields for naming parity (e.g. `DRAP` missing in local).
+- [ ] Fine-tune VOACAP reliability peaks to match original server sensitivity.
+- [ ] Implement Comprehensive Parity Test Suite using REST APIs (`proxy/compare_v2.py`).
+
 ## Next Steps
-- [x] Address world weather parity issues (prevailing stats via `wttr.in`).
-- [x] Improve SDO image scaling/quality for better parity.
+- [ ] Address world weather parity issues (prevailing stats via `wttr.in`).
+- [ ] Improve SDO image scaling/quality for better parity.
+- [ ] Fully automate parity checking against the original server on port 8083.

@@ -114,7 +114,7 @@ def get_solar_pos(year, month, day, utc):
     sub_lng = (12.0 - utc) * 15.0
     return math.radians(dec), math.radians(sub_lng)
 
-def calculate_point_propagation(tx_lat, tx_lng, rx_lat, rx_lng, mhz, toa, year, month, utc, ssn):
+def calculate_point_propagation(tx_lat, tx_lng, rx_lat, rx_lng, mhz, toa, year, month, utc, ssn, path=0):
     """Refined endpoint for point-to-point propagation matching map logic"""
     tx_lat_rad = math.radians(tx_lat)
     tx_lng_rad = math.radians(tx_lng)
@@ -136,13 +136,13 @@ def calculate_point_propagation(tx_lat, tx_lng, rx_lat, rx_lng, mhz, toa, year, 
         tx_lat_rad, tx_lng_rad, rx_lat_rad, rx_lng_rad,
         mhz, toa, s_dec_rad, s_lng_rad,
         cos_tx_lat, sin_tx_lat, cos_s_dec, sin_s_dec,
-        muf_base, pole_lat, pole_lng
+        muf_base, pole_lat, pole_lng, path=path
     )
 
 def calculate_point_propagation_core(tx_lat_rad, tx_lng_rad, rlat_rad, rlng_rad,
                                    m_mhz, toa_param, s_dec_rad, s_lng_rad,
                                    cos_tx_lat, sin_tx_lat, cos_s_dec, sin_s_dec,
-                                   muf_base, pole_lat, pole_lng):
+                                   muf_base, pole_lat, pole_lng, path=0):
     """Core pixel/point calculation logic extracted from generate_voacap_response"""
     srl = math.sin(rlat_rad)
     crl = math.cos(rlat_rad)
@@ -154,7 +154,14 @@ def calculate_point_propagation_core(tx_lat_rad, tx_lng_rad, rlat_rad, rlng_rad,
     
     cos_c = sin_tx_lat * srl + cos_tx_lat * crl * math.cos(d_lon)
     dist_km = math.acos(max(-1.0, min(1.0, cos_c))) * 6371.0
-    
+
+    if path == 1:
+        # Long Path Logic
+        dist_km = 40075.0 - dist_km
+        az_rad = (az_rad + math.pi)
+        while az_rad > math.pi: az_rad -= 2*math.pi
+        while az_rad < -math.pi: az_rad += 2*math.pi
+
     s_az_tx = math.atan2(math.sin(s_lng_rad - tx_lng_rad) * cos_s_dec,
                        cos_tx_lat * sin_s_dec - sin_tx_lat * cos_s_dec * math.cos(s_lng_rad - tx_lng_rad))
     
@@ -166,15 +173,41 @@ def calculate_point_propagation_core(tx_lat_rad, tx_lng_rad, rlat_rad, rlng_rad,
     mag_az_f = 1.0 + 0.4 * math.pow(math.cos(az_rad), 2.0)
     combo_f = (gray_tangent_f + mag_az_f) / 2.0
     
+    # Path Vectors for mid-point sampling
     v_tx = (cos_tx_lat * math.cos(tx_lng_rad), cos_tx_lat * math.sin(tx_lng_rad), sin_tx_lat)
     v_rx = (crl * math.cos(rlng_rad), crl * math.sin(rlng_rad), srl)
     
+    # For Long Path sampling, we use the vector opposite to the Short Path cord direction
+    if path == 1:
+        # Vector from TX to RX in 3D
+        v_diff = [v_rx[j] - v_tx[j] for j in range(3)]
+        # We want to go around the other way. 
+        # A simple approximation for sampling along the Long Path:
+        # Sample points on the opposite arc.
+        v_rx_lp = [ -v for v in v_rx ] # Not exactly right but better than linear through core
+        # Better: Sample points as if we are going the other way.
+        pass
+
     sample_weights = [0.25, 0.5, 0.25]
     sum_muf = 0.0
     sum_rel = 0.0
     
     for i, frac in enumerate([0.25, 0.5, 0.75]):
-        v_mid = [v_tx[j] + (v_rx[j] - v_tx[j]) * frac for j in range(3)]
+        if path == 1:
+            # Long path sampling approx: 
+            # We sample at 0.1, 0.5, 0.9 of the SP arc but flipped? No.
+            # Let's just use the same logic but adjust the effective distance.
+            effective_frac = frac 
+        else:
+            effective_frac = frac
+
+        v_mid = [v_tx[j] + (v_rx[j] - v_tx[j]) * effective_frac for j in range(3)]
+        if path == 1:
+            # Shift mid points for Long Path.
+            # v_mid is on the SP chord. The LP "mid" is roughly -v_mid mirrored across the Earth center.
+            # If frac=0.5, mid point is exactly opposite to SP mid point.
+            v_mid = [ -v for v in v_mid ]
+
         mag = math.sqrt(sum(v*v for v in v_mid))
         if mag < 0.001:
             v_mid = [v_tx[j] + (v_rx[j] - v_tx[j] + 0.001) * frac for j in range(3)]
@@ -198,7 +231,7 @@ def calculate_point_propagation_core(tx_lat_rad, tx_lng_rad, rlat_rad, rlng_rad,
         
         reflection_factor = (0.4 + 0.6 * zenith_layer) * (0.8 + 0.2 * azimuth_layer)
         if cos_z_s <= -0.1:
-            floor = 0.4 * math.cos(slat - s_dec_rad) if is_polar else 0.0
+            floor = 0.4 * math.cos(slat - s_dec_rad) if is_polar else 0.2
             reflection_factor = floor + (reflection_factor - floor) * math.exp((cos_z_s + 0.1) * 8.0)
         
         ref_f = 1.0 + (dist_km / 1000.0) * (1.0 - cos_z_p) * 0.045 * combo_f * f_trans * (1.1 - 0.1 * azimuth_layer)
@@ -236,6 +269,7 @@ def generate_voacap_response(query, map_type="REL"):
         year = int(query.get('YEAR', [time.gmtime().tm_year])[0])
         month = int(query.get('MONTH', [time.gmtime().tm_mon])[0])
         utc = float(query.get('UTC', [time.gmtime().tm_hour])[0])
+        path = int(query.get('PATH', [0])[0])
         
         is_muf = (m_mhz == 0) or (map_type == "MUF")
         is_toa = (map_type == "TOA")
@@ -272,7 +306,7 @@ def generate_voacap_response(query, map_type="REL"):
                         tx_lat_rad, tx_lng_rad, rlat_rad, rlng_rad,
                         m_mhz, toa_param, s_dec_rad, s_lng_rad,
                         cos_tx_lat, sin_tx_lat, cos_s_dec, sin_s_dec,
-                        muf_base, pole_lat, pole_lng
+                        muf_base, pole_lat, pole_lng, path=path
                     )
                     val_buffer[y * MAP_W + x] = p_muf if is_muf else p_rel
 

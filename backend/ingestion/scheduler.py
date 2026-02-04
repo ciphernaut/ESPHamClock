@@ -19,8 +19,8 @@ def main():
     # Initial fetch
     run_fetcher()
     
-    # Run every 1 hour (3600 seconds)
-    interval = 3600
+    # Run every 10 minutes (600 seconds)
+    interval = 600
     print(f"Scheduler started. Will run every {interval} seconds.")
     
     try:

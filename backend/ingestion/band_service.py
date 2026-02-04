@@ -58,7 +58,7 @@ def get_band_conditions(query):
     def get_rels_for_utc(utc_val):
         rels = []
         for mhz in bands:
-            rel = calculate_point_reliability(tx_lat, tx_lng, rx_lat, rx_lng, mhz, float(raw_toa), utc_val, ssn)
+            rel = calculate_point_reliability(tx_lat, tx_lng, rx_lat, rx_lng, mhz, float(raw_toa), utc_val, ssn, path=int(raw_path))
             rels.append(f"{rel:.2f}")
         return ",".join(rels)
 
@@ -75,7 +75,7 @@ def get_band_conditions(query):
     
     return "\n".join(lines) + "\n"
 
-def calculate_point_reliability(tlat, tlng, rlat, rlng, mhz, toa, utc, ssn):
+def calculate_point_reliability(tlat, tlng, rlat, rlng, mhz, toa, utc, ssn, path=0):
     """
     Use the refined VOACAP-based model for consistency.
     """
@@ -84,7 +84,7 @@ def calculate_point_reliability(tlat, tlng, rlat, rlng, mhz, toa, utc, ssn):
     month = now.month
     
     # voacap_service.calculate_point_propagation returns (muf, rel)
-    _, rel = voacap_service.calculate_point_propagation(tlat, tlng, rlat, rlng, mhz, toa, year, month, float(utc), ssn)
+    _, rel = voacap_service.calculate_point_propagation(tlat, tlng, rlat, rlng, mhz, toa, year, month, float(utc), ssn, path=path)
     return rel
 
 if __name__ == "__main__":
