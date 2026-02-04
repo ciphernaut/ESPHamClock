@@ -21,7 +21,9 @@
 - [x] **Investigate**: Repair 0% parity for `/ham/HamClock/solar-wind/swind-24hr.txt` (Formatting Fixed).
 
 ## REST API Parity & Reconciliation
-- [ ] Investigate Client Timezone mismatch (`UTC+0` vs `UTC+10` in Australia).
+- [x] Investigate Client Timezone mismatch (`UTC+0` vs `UTC+10` in Australia).
+    - [x] identified root cause: missing newline in backend weather response.
+    - [x] verified fix: `DE_tz` now correctly reports `UTC+10`.
 - [x] **Fix**: achieved 100% parity for `get_spacewx.txt` (restored DRAP, Bz, and DEDX fields).
 - [ ] Fine-tune VOACAP reliability peaks to match original server sensitivity.
 - [ ] Implement Comprehensive Parity Test Suite using REST APIs (`proxy/compare_v2.py`).
