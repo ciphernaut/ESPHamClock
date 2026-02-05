@@ -252,10 +252,10 @@ def calculate_point_propagation_core(tx_lat_rad, tx_lng_rad, rlat_rad, rlng_rad,
         
         ele_angle = math.atan(900.0 / (max(20.0, h_len) / 2.0))
         reflection_eff = math.pow(math.cos(math.pi/2.0 - ele_angle), 0.3)
-        abs_p = math.exp(-3.4 * terminator_h * zenith_layer * (10.0 / m_mhz)**2.2) # Lowered from 3.8/3.5 to 3.4
-        # Tuned path loss from 0.000035 to 0.000032
-        path_loss_factor = 1.0 / (1.0 + 0.000032 * dist_km * (1.0 / max(0.2, combo_f)))
-        p_rel = 1.0 / (1.0 + math.exp(-18.0 * ((p_muf / m_mhz) * res_total * abs_p * reflection_eff * path_loss_factor * pca_loss - 0.38)))
+        abs_p = math.exp(-5.0 * terminator_h * zenith_layer * (10.0 / m_mhz)**2.2) # Adjusted from 5.2 to 5.0
+        # Tuned path loss from 0.00006 to 0.000065
+        path_loss_factor = 1.0 / (1.0 + 0.000065 * dist_km * (1.0 / max(0.2, combo_f)))
+        p_rel = 1.0 / (1.0 + math.exp(-25.0 * ((p_muf / m_mhz) * res_total * abs_p * reflection_eff * path_loss_factor * pca_loss - 0.70))) # Increased slope and offset
         sum_rel += p_rel * sample_weights[i]
         
     return sum_muf, sum_rel
