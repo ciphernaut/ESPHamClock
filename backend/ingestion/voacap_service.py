@@ -20,26 +20,41 @@ MAX_CACHE_SIZE = 100
 
 COUNTRIES_MAP = None
 TERRAIN_MAP = None
+COUNTRIES_MASK = None
 
 def load_base_maps():
-    global COUNTRIES_MAP, TERRAIN_MAP
+    global COUNTRIES_MAP, TERRAIN_MAP, COUNTRIES_MASK
     try:
-        base_data = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
-        processed_data = os.path.join(base_data, "processed_data")
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        data_dir = os.path.join(base_dir, "data")
+        processed_data = os.path.join(data_dir, "processed_data")
+        
         c_path = os.path.join(processed_data, "map-D-660x330-Countries.bmp")
         t_path = os.path.join(processed_data, "map-D-660x330-Terrain.bmp")
+        mask_path = os.path.join(data_dir, "countries_mask.bin")
+        
         if os.path.exists(c_path):
             with open(c_path, "rb") as f:
                 f.seek(122)
                 COUNTRIES_MAP = struct.unpack('<' + 'H'*(MAP_W*MAP_H), f.read(MAP_W*MAP_H*2))
+        
         if os.path.exists(t_path):
             with open(t_path, "rb") as f:
                 f.seek(122)
                 TERRAIN_MAP = struct.unpack('<' + 'H'*(MAP_W*MAP_H), f.read(MAP_W*MAP_H*2))
+                
+        if os.path.exists(mask_path):
+            with open(mask_path, "rb") as f:
+                COUNTRIES_MASK = np.frombuffer(f.read(), dtype=np.uint16)
+                logger.info(f"Loaded countries mask, {np.sum(COUNTRIES_MASK)} pixels.")
+        else:
+            logger.warning(f"Countries mask not found at {mask_path}")
+            
     except Exception as e:
         logger.error(f"Error loading base maps: {e}")
 
 load_base_maps()
+import numpy as np # Ensure numpy is available for mask operations
 
 def interpolate_color_value(val, scale):
     if val <= scale[0][0]: c = scale[0][1]
@@ -363,6 +378,10 @@ def generate_voacap_response(query, map_type="REL"):
                         r, g, b = (c565 >> 11) & 0x1F, (c565 >> 5) & 0x3F, c565 & 0x1F
                         c565 = ((r >> 1) << 11) | ((g >> 1) << 5) | (b >> 1)
                     
+                    # Overlay country outlines (Black pixels from mask)
+                    if COUNTRIES_MASK is not None and COUNTRIES_MASK[idx]:
+                        c565 = 0x0000
+                        
                     calc_colors[idx] = c565
 
             # Step 3: Upscale calc_colors to target resolution
