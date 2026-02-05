@@ -25,7 +25,7 @@
     - [x] identified root cause: missing newline in backend weather response.
     - [x] verified fix: `DE_tz` now correctly reports `UTC+10`.
 - [x] **Fix**: achieved 100% parity for `get_spacewx.txt` (restored DRAP, Bz, and DEDX fields).
-- [ ] Fine-tune VOACAP reliability peaks to match original server sensitivity.
+- [x] Fine-tune VOACAP reliability peaks to match original server sensitivity.
 - [ ] Implement Comprehensive Parity Test Suite using REST APIs (`proxy/compare_v2.py`).
 
 ## Next Steps
