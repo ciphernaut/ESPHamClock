@@ -64,24 +64,25 @@ curl http://localhost:9086/geomag/kindex.txt
 ### Integration Testing
 ```bash
 # Start full stack first
-./run_stack.sh start all
+./run_stack.sh restart all
 
 # Test client access
-curl http://localhost:8081/                           # Web client interface
-curl http://localhost:9085/                           # Proxy interface
+curl http://localhost:8091/                           # ax4test (DUT) Web RW
+curl http://localhost:8092/                           # ax4upstream (Baseline) Web RW
 ```
 
 ### Environment-Specific Verification (Dual-Client)
-In this environment, a second HamClock client (VK4SGE) is running, pointing at the original server. This allows for live parity checking via REST APIs.
-- **Our Client REST API**: `http://localhost:8080/`
-- **Original Client REST API**: `http://localhost:8083/`
-- **VK4SGE Live View**: `http://localhost:8084/live.html`
+In this environment, two HamClock clients are running in parallel to facilitate live parity verification.
+- **ax4test (DUT)**: Points to our local backend via Proxy 1 (Port 9085).
+- **ax4upstream (Original)**: Points to the upstream backend via Proxy 2 (Port 9095).
 
-You can compare endpoints (e.g., `get_voacap.txt`) between the two to trigger fresh readings or reconcile data:
-- Ours: `http://localhost:8080/get_voacap.txt`
-- Original: `http://localhost:8083/get_voacap.txt`
+**REST API Comparison Points:**
+- **Our Client (ax4test)**: `http://localhost:8001/`
+- **Original Client (ax4upstream)**: `http://localhost:8002/`
 
-Use `python3 proxy/compare_v2.py` for automated reconciliation.
+You can directly compare REST responses (e.g., `get_voacap.txt`) between these two ports to identify discrepancies:
+- `curl http://localhost:8001/get_voacap.txt`
+- `curl http://localhost:8002/get_voacap.txt`
 
 ## Code Style Guidelines
 
@@ -241,10 +242,12 @@ tail -f logs/scheduler.log     # Data scheduler logs
 ## Service Ports
 
 - Backend API: 9086
-- Shadow Proxy: 9085  
-- Web Client: 8081
-- Test Client REST (Mine): 8080
-- Original Client REST: 8083
+- Shadow Proxy (ax4test): 9085
+- Verify Proxy (ax4upstream): 9095
+- ax4test Web RW: 8091
+- ax4upstream Web RW: 8092
+- ax4test REST: 8001
+- ax4upstream REST: 8002
 
 ## Testing Individual Services
 
