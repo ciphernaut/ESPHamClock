@@ -1,5 +1,10 @@
 # HamClock Data Source Parity TODO
 
+## High Priority Bugs
+- [ ] **Clock Offset/TZ Divergence**: `ax4test` and `ax4upstream` show different UTC offsets (UTC+10 vs UTC+11) for the same coordinates (38S 145E).
+- [ ] **DRAP Data Sparsity**: Backend serves 1128 lines, but client only reads first 400. Need to increase `MAX_WEATHER_LINES` or similar.
+- [ ] **REST Port Unresponsiveness**: Client REST ports (8001/8002) occasionally hang or become inaccessible within the agent shell environment.
+
 ## High Priority: Truly Static/Shims
 - [x] Convert `/ham/HamClock/fetchBandConditions.pl` from shim to dynamic model (SSN/Solar Flux based).
 - [x] Implement dynamic routing for `/ham/HamClock/fetchONTA.pl` using `onta_service.py`.
@@ -22,13 +27,19 @@
 
 ## REST API Parity & Reconciliation
 - [x] Investigate Client Timezone mismatch (`UTC+0` vs `UTC+10` in Australia).
-    - [x] identified root cause: missing newline in backend weather response.
-    - [x] verified fix: `DE_tz` now correctly reports `UTC+10`.
+- [x] verified fix: `DE_tz` now correctly reports `UTC+10`.
 - [x] **Fix**: achieved 100% parity for `get_spacewx.txt` (restored DRAP, Bz, and DEDX fields).
 - [x] Fine-tune VOACAP reliability peaks to match original server sensitivity.
-- [ ] Implement Comprehensive Parity Test Suite using REST APIs (`proxy/compare_v2.py`).
+- [x] Implement Comprehensive Parity Test Suite foundation (`parity_debug` skill).
+
+## Custom Skills Development
+- [x] Develop **Parity Inspector** skill for semantic endpoint comparison.
+- [x] Develop **Client Orchestrator** skill for automated REST-based state initialization.
+- [x] Develop **Stack Surgeon** skill for advanced process recovery.
+- [x] Develop **Asset Validator** skill for binary integrity.
 
 ## Next Steps
-- [x] Address world weather parity issues (prevailing stats via `wttr.in`).
+- [/] Refine **Parity Inspector** skill.
+    - [ ] Implement batch verification script (`scripts/batch_compare.py`).
+    - [ ] Run full semantic sweep and document remaining discrepancies.
 - [ ] Improve SDO image scaling/quality for better parity.
-- [ ] Fully automate parity checking against the original server on port 8083.
