@@ -1,12 +1,8 @@
 # ESPHamClock - Agent Development Guide
 
 > [!IMPORTANT]
-> ## CRITICAL PROJECT MANDATES
-> 1. **SERVICE MANAGEMENT**: ALWAYS use `./run_stack.sh` for starting, stopping, or checking status of any project component. Never run `server.py` or other main binaries directly unless debugging a specific failure that `run_stack.sh` cannot handle.
-> 2. **WORKFLOWS**: Refer to `.agent/workflows/` for standard operating procedures. Specifically, use `manage-stack.md` for service control.
-> 3. **LOGGING**: NEVER capture transient logs, debug outputs, or analysis dumps in `/tmp`. ALWAYS use the project `logs/` directory for persistence and visibility.
-> 4. **CACHING**: This project relies heavily on file-based caching in `backend/data/processed_data/`. Always check for existing cached data before fetching from upstream.
-> 5. **PARITY**: The goal is 1:1 parity with the original HamClock backend. Every line/pixel counts.
+> ## PROJECT GOVERNANCE
+> All agents MUST follow the project mandates and rules defined in [RULES.md](file:///projects/antigravity/ESPHamClock/RULES.md). These include critical requirements for service management, client stability, and data parity.
 
 ## Project Architecture
 ...
