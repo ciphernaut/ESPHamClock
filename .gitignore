@@ -52,3 +52,5 @@ CTY_WT_MOD.DAT
 client/hamclock-1600x960
 bin/
 test_file
+melbourne_om.json
+melbourne_wttr.json

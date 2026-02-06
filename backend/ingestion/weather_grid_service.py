@@ -48,7 +48,7 @@ def fetch_batch_weather(coords_batch):
         "latitude": ",".join(lats),
         "longitude": ",".join(lngs),
         "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,pressure_msl,weather_code",
-        "timezone": "GMT"
+        "timezone": "auto"
     }
     
     try:
@@ -73,7 +73,8 @@ def fetch_batch_weather(coords_batch):
             # Use hPa (msl) directly to match original server's behavior (client expects hPa)
             pressure = current.get("pressure_msl", 1013)
             condition = map_wmo_to_hamclock(current.get("weather_code", 0))
-            tz_offset = int(round(lng / 15.0) * 3600)
+            # Use UTC offset from API if available, else fallback to naive
+            tz_offset = res.get("utc_offset_seconds", int(round(lng / 15.0) * 3600))
             
             points.append({
                 "lat": lat,
