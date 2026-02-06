@@ -8,14 +8,14 @@ import difflib
 import json
 import parity_checker
 
-PORT = 9085
+PORT = int(os.environ.get("PROXY_PORT", 9085))
 TARGET_HOST = "clearskyinstitute.com"
 LOCAL_REPLACEMENT_HOST = "localhost"
 LOCAL_REPLACEMENT_PORT = 9086
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 LOG_DIR = os.path.join(BASE_DIR, "backend", "data", "captured_data")
-DISCREPANCY_LOG = os.path.join(BASE_DIR, "logs", "discrepancies.log")
-PARITY_SUMMARY = os.path.join(BASE_DIR, "logs", "parity_summary.json")
+DISCREPANCY_LOG = os.environ.get("DISCREPANCY_LOG", os.path.join(BASE_DIR, "logs", f"discrepancies_{PORT}.log"))
+PARITY_SUMMARY = os.environ.get("PARITY_SUMMARY", os.path.join(BASE_DIR, "logs", f"parity_summary_{PORT}.json"))
 
 # Proxy Modes:
 # ORIGINAL: Only original backend

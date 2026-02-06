@@ -2,31 +2,31 @@
 
 Welcome to the ESPHamClock Reconstruction Beta! This repository provides a local backend replacement for HamClock data services.
 
-## Quick Start (Backend Services)
+## Quick Start (Verification Stack)
 
-If you are running this on a central server for your ESP8266/ESP32 devices:
+This environment runs two HamClock instances for live parity verification:
 
 1.  **Start Services**:
     ```bash
-    ./run_stack.sh
+    ./run_stack.sh restart all
     ```
-    This starts the **Local Server**, **Data Scheduler**, and **Shadow Proxy**.
+    This starts the **Backend**, **Dual Proxies**, and **Dual Clients**.
 
-2.  **Point your HamClock at this server**:
-    Configure your HamClock device to use your server's IP and Port **9085**.
+2.  **Access the Clients**:
+    -   **ax4test (DUT)**: `http://localhost:8091` (Compares local backend vs upstream)
+    -   **ax4upstream (Original)**: `http://localhost:8092` (Baseline for comparison)
 
-## Understanding "Shadow mode"
+## Understanding the Dual-Client Setup
 
-By default, we run in **SHADOW** mode. 
-- **Privacy**: Your device talks to your local server first.
-- **Accuracy**: The proxy compares our local shims (Weather, VOACAP, etc.) against the original backend.
-- **Reliability**: If our local shim fails or is missing data, the proxy **automatically falls back** to the original backend, ensuring your clock never "breaks."
+We run two clients in parallel to identify discrepancies immediately:
+-   **ax4test**: Points to `localhost:9085` (Shadow Proxy). It uses our local backend but falls back to the original if data is missing.
+-   **ax4upstream**: Points to `localhost:9095` (Verify Proxy). It provides a baseline for what the original server is currently serving.
 
 ## Monitoring Parity
 
-You can see how well our local shims are matching the "real world" by visiting the Parity Dashboard:
-
-**URL**: `http://<your-server-ip>:9085/parity`
+Visit the Parity Dashboards to see real-time comparisons:
+-   **ax4test vs Upstream**: `http://localhost:9085/parity`
+-   **ax4upstream vs Upstream**: `http://localhost:9095/parity` (Should be 100% parity)
 
 ## Reporting Discrepancies
 
