@@ -1,8 +1,9 @@
 # HamClock Data Source Parity TODO
 
 ## High Priority Bugs
-- [ ] **Clock Offset/TZ Divergence**: `ax4test` and `ax4upstream` show different UTC offsets (UTC+10 vs UTC+11) for the same coordinates (38S 145E).
-- [ ] **DRAP Data Sparsity**: Backend serves 1128 lines, but client only reads first 400. Need to increase `MAX_WEATHER_LINES` or similar.
+- [] **Clock Offset/TZ Divergence**: `ax4test` and `ax4upstream` show different UTC offsets (UTC+10 vs UTC+11) for the same coordinates (38S 145E).
+- [x] DRAP data sparsity - backend serves 1128 lines but client only reads first 400 because MAX_WEATHER_LINES (or whichever is used) is not large enough for DRAP.
+    - Resolving by optimizing backend to serve 400 lines at 4-minute intervals (covers ~26.6 hours) to maintain client compatibility.
 - [ ] **REST Port Unresponsiveness**: Client REST ports (8001/8002) occasionally hang or become inaccessible within the agent shell environment.
 
 ## High Priority: Truly Static/Shims
