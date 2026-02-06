@@ -140,20 +140,27 @@ def fetch_and_process_drap():
         
         history[utime] = f"{utime} : {dmin:.2f} {dmax:.2f} {dmean:.2f}"
         
-        # Ensure we always have at least enough dense points for the client.
-        # Use 5-minute intervals (300 points = 25 hours) to ensure every 10-minute bucket is filled.
+        # Use 4-minute intervals (400 points = ~26.6 hours) to fit client's 400-line read limit.
         # Anchor to current time to avoid "data too sparse" errors if the last real datum is old.
-        # We seed a range from +10m down to -24h to handle minor clock drift and client expectations.
+        # We seed a range from +12m down to -26.6h.
         now_ts = int(time.time())
-        for i in range(-2, 288): # From +10m down to -24h (total ~24h @ 5min)
-            ts = (now_ts // 300) * 300 - i * 300
+        for i in range(-3, 397): # From +12m down to -(396*4)m (total 400 points)
+            ts = (now_ts // 240) * 240 - i * 240
             if ts not in history:
                 history[ts] = f"{ts} : {dmin:.2f} {dmax:.2f} {dmean:.2f}"
         
         sorted_uts = sorted(history.keys())
+        
+        # Filter to ensure points are at least 4 minutes apart to maximize 24h coverage within 400-line limit
+        filtered_uts = []
+        last_t = 0
+        for u in sorted_uts:
+            if u - last_t >= 240:
+                filtered_uts.append(u)
+                last_t = u
 
         with open(STATS_FILE, "w") as f:
-            for u in sorted_uts[-380:]: # Keep just over 24h worth of points (380 * 5min = ~31 hours)
+            for u in filtered_uts[-400:]: # Keep exactly 400 points to match client read limit
                 f.write(f"{history[u]}\n")
         
         # Map generation (660x330)
