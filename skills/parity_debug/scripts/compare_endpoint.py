@@ -22,8 +22,10 @@ def clean_response(text, endpoint):
 
 def compare(url1, url2, endpoint):
     try:
-        r1 = requests.get(url1, timeout=10)
-        r2 = requests.get(url2, timeout=10)
+        print(f"  [DEBUG] Fetching R1: {url1}")
+        r1 = requests.get(url1, timeout=5)
+        print(f"  [DEBUG] Fetching R2: {url2}")
+        r2 = requests.get(url2, timeout=5)
         
         if r1.status_code != r2.status_code:
             print(f"FAILED: Status Code Mismatch ({r1.status_code} vs {r2.status_code})")
