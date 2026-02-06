@@ -1,4 +1,5 @@
 # Logs and data captures
+debug/
 logs/
 captured_data/
 discrepancies.log

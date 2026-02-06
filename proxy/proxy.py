@@ -13,9 +13,10 @@ TARGET_HOST = "clearskyinstitute.com"
 LOCAL_REPLACEMENT_HOST = "localhost"
 LOCAL_REPLACEMENT_PORT = 9086
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-LOG_DIR = os.path.join(BASE_DIR, "backend", "data", "captured_data")
-DISCREPANCY_LOG = os.environ.get("DISCREPANCY_LOG", os.path.join(BASE_DIR, "logs", f"discrepancies_{PORT}.log"))
-PARITY_SUMMARY = os.environ.get("PARITY_SUMMARY", os.path.join(BASE_DIR, "logs", f"parity_summary_{PORT}.json"))
+DEBUG_DIR = os.path.join(BASE_DIR, "debug")
+LOG_DIR = os.path.join(DEBUG_DIR, "captured_data")
+DISCREPANCY_LOG = os.environ.get("DISCREPANCY_LOG", os.path.join(DEBUG_DIR, "logs", f"discrepancies_{PORT}.log"))
+PARITY_SUMMARY = os.environ.get("PARITY_SUMMARY", os.path.join(DEBUG_DIR, "logs", f"parity_summary_{PORT}.json"))
 
 # Proxy Modes:
 # ORIGINAL: Only original backend
@@ -174,6 +175,8 @@ class ShadowProxy(http.server.SimpleHTTPRequestHandler):
         self.update_parity_summary(path, match_result)
 
         if match_result.status == parity_checker.ParityResult.DIFF:
+            log_dir = os.path.dirname(DISCREPANCY_LOG)
+            if not os.path.exists(log_dir): os.makedirs(log_dir)
             with open(DISCREPANCY_LOG, "a") as f:
                 f.write(f"--- DISCREPANCY DETECTED [{datetime.datetime.now()}] ---\n")
                 f.write(f"Path: {path}\n")
