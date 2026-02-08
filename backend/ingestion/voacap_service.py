@@ -703,3 +703,33 @@ def generate_voacap_response(query, map_type="REL"):
     except Exception as e:
         logger.error(f"Error in VOACAP service: {e}", exc_info=True)
         return None
+
+def calculate_dedx_for_bands(de_lat, de_lng, dx_lat, dx_lng, ssn):
+    """Calculate reliability for standard HamClock bands"""
+    # Bands: 80, 40, 30, 20, 17, 15, 12, 10
+    # Freqs: 3.5, 7.0, 10.1, 14.0, 18.1, 21.0, 24.9, 28.0
+    band_map = {
+        "80m": 3.5, "40m": 7.0, "30m": 10.1, "20m": 14.0,
+        "17m": 18.1, "15m": 21.0, "12m": 24.9, "10m": 28.0
+    }
+    
+    # Common params
+    t = time.gmtime()
+    year, month, utc = t.tm_year, t.tm_mon, t.tm_hour + t.tm_min/60.0
+    
+    results = {}
+    for band, mhz in band_map.items():
+        # calculate_point_propagation returns (muf, rel)
+        # We need rel (reliability)
+        try:
+             # Using 3 degree TOA as default
+            muf, rel = calculate_point_propagation(
+                de_lat, de_lng, dx_lat, dx_lng, mhz, 
+                3.0, year, month, utc, float(ssn)
+            )
+            results[band] = int(rel * 100)
+        except Exception as e:
+            logger.error(f"Error calculating point prop for {band}: {e}")
+            results[band] = 0
+            
+    return results

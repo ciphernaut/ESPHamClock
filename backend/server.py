@@ -21,6 +21,7 @@ try:
     import drap_service
     import voacap_service
     import band_service
+    import spacewx_service
     logger.info("Successfully imported all Group 3 dynamic services")
 except ImportError as e:
     logger.error(f"Failed to import services: {e}")
@@ -34,6 +35,12 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "data", "processed_data")
 
 class HamClockBackend(http.server.SimpleHTTPRequestHandler):
     protocol_version = "HTTP/1.0"
+    
+    # Store state for DE and DX locations
+    stored_de_lat = 0.0
+    stored_de_lng = 0.0
+    stored_dx_lat = 0.0
+    stored_dx_lng = 0.0
 
     def do_GET(self):
         parsed_path = urllib.parse.urlparse(self.path)
@@ -74,6 +81,12 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
             self.handle_static(normalized_path)
         elif normalized_path.startswith("/SDO/"):
             self.handle_sdo(normalized_path)
+        elif normalized_path == "/get_spacewx.txt":
+            self.handle_get_spacewx(query)
+        elif normalized_path == "/set_newde":
+            self.handle_set_newde(query)
+        elif normalized_path == "/set_newdx":
+            self.handle_set_newdx(query)
         elif normalized_path.startswith("/geomag/") or normalized_path.startswith("/ssn/") or normalized_path.startswith("/solar-flux/") \
              or normalized_path.startswith("/xray/") or normalized_path.startswith("/solar-wind/") or normalized_path.startswith("/Bz/") \
              or normalized_path.startswith("/aurora/") or normalized_path.startswith("/dst/") or normalized_path.startswith("/NOAASpaceWX/") \
@@ -336,6 +349,56 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
             logger.warning(f"Client disconnected during weather response: {e}")
         except Exception as e:
             logger.error(f"Error in handle_weather: {e}", exc_info=True)
+            self.send_error(500, str(e))
+
+    def handle_set_newde(self, query):
+        try:
+            lat = float(query.get('lat', [0])[0])
+            lng = float(query.get('lng', [0])[0])
+            HamClockBackend.stored_de_lat = lat
+            HamClockBackend.stored_de_lng = lng
+            logger.info(f"Updated DE to {lat}, {lng}")
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK\n")
+        except Exception as e:
+            logger.error(f"Error setting DE: {e}")
+            self.send_error(500, str(e))
+
+    def handle_set_newdx(self, query):
+        try:
+            lat = float(query.get('lat', [0])[0])
+            lng = float(query.get('lng', [0])[0])
+            HamClockBackend.stored_dx_lat = lat
+            HamClockBackend.stored_dx_lng = lng
+            logger.info(f"Updated DX to {lat}, {lng}")
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK\n")
+        except Exception as e:
+            logger.error(f"Error setting DX: {e}")
+            self.send_error(500, str(e))
+
+    def handle_get_spacewx(self, query):
+        try:
+            # Use stored state if params missing
+            # Note: query strings in Python http.server are lists
+            data = spacewx_service.spacewx_service.get_spacewx_data(
+                query,
+                HamClockBackend.stored_de_lat,
+                HamClockBackend.stored_de_lng,
+                HamClockBackend.stored_dx_lat,
+                HamClockBackend.stored_dx_lng
+            )
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data.encode('utf-8'))
+        except Exception as e:
+            logger.error(f"Error generating spacewx: {e}", exc_info=True)
             self.send_error(500, str(e))
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):

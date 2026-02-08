@@ -50,19 +50,28 @@ def fetch_and_parse_solar_indices():
     
     for line in data_lines:
         parts = line.split()
-        if len(parts) < 10:
+        if len(parts) < 6:
             continue
             
         year = parts[0]
         month = parts[1]
         day = parts[2]
+        # Column 3: Radio Flux 10.7cm (observed)
+        # Column 4: Sunspot Number (observed)
         sw_flux = parts[3]
         ssn = parts[4]
         
+        # Validation: prevent parsing headers as data if they accidentally get through
+        if not year.isdigit() or not ssn.isdigit():
+            continue
+
         date_str = f"{year} {month.zfill(2)} {day.zfill(2)}"
         ssn_records.append(f"{date_str} {ssn}")
         # Add 3 records per day for solar flux to reach 99 values for 33 days (SFLUX_NV)
         flux_records.extend([sw_flux, sw_flux, sw_flux])
+        
+    print(f"DEBUG: Last SSN record: {ssn_records[-1] if ssn_records else 'None'}")
+    print(f"DEBUG: Last Flux record: {flux_records[-1] if flux_records else 'None'}")
 
     # Save SSN (last 31 days)
     # Ensure we have at least 31 records and take the most recent ones.
