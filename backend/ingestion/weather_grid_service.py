@@ -4,6 +4,8 @@ import time
 import logging
 import json
 from datetime import datetime
+from timezonefinder import TimezoneFinder
+import pytz
 
 logger = logging.getLogger(__name__)
 
@@ -165,8 +167,27 @@ def generate_weather_grid():
             p = {
                 "lat": lat, "lng": lng, "temp": 0.0, "hum": 50.0,
                 "wind_speed": 0.0, "wind_dir": 0.0, "pressure": 1013.0,
-                "condition": "Clear", "tz": int(round(lng / 15.0) * 3600)
+                "condition": "Clear", "tz": 0
             }
+            
+            # Use TimezoneFinder for accurate offset if not in cache
+            try:
+                tf = TimezoneFinder()
+                tz_name = tf.timezone_at(lng=lng, lat=lat)
+                if not tz_name:
+                    # Fallback for coastal points
+                    tz_name = tf.closest_timezone_at(lng=lng, lat=lat)
+                    
+                if tz_name:
+                    tz = pytz.timezone(tz_name)
+                    # Get offset for current time (considering DST)
+                    p['tz'] = int(tz.utcoffset(datetime.now()).total_seconds())
+                else:
+                    # Fallback to longitude based approximation
+                    p['tz'] = int(round(lng / 15.0) * 3600)
+            except Exception as e:
+                logger.error(f"Error calculating timezone for {lat},{lng}: {e}")
+                p['tz'] = int(round(lng / 15.0) * 3600)
             
         if lng != current_lng:
             lines.append("")
