@@ -64,8 +64,8 @@ status_proxy() {
 }
 
 status_client() {
-    check_port $CLIENT1_RW "Client VK4SHF (RW)"
-    check_port $CLIENT2_RW "Client VK4SGE (RW)"
+    check_port $CLIENT1_RW "Client ax4test (RW)"
+    check_port $CLIENT2_RW "Client ax4upstream (RW)"
 }
 
 stop_backend() {
@@ -131,25 +131,25 @@ start_client() {
 
 setup_clients() {
     echo "Performing initial setup for clients via REST API..."
-    # Client 1: VK4SHF
-    echo "Setting up $CLIENT1_NAME (VK4SHF) on port $CLIENT1_REST..."
-    curl -s "http://localhost:$CLIENT1_REST/set_newde?call=VK4SHF" > /dev/null
+    # Client 1: ax4test
+    echo "Setting up $CLIENT1_NAME (ax4test) on port $CLIENT1_REST..."
+    curl -s "http://localhost:$CLIENT1_REST/set_newde?call=$CLIENT1_NAME" > /dev/null
     curl -s "http://localhost:$CLIENT1_REST/set_newde?grid=QG63" > /dev/null
     curl -s "http://localhost:$CLIENT1_REST/set_newdx?grid=NJ07" > /dev/null
-    # Client 2: VK4SGE
-    echo "Setting up $CLIENT2_NAME (VK4SGE) on port $CLIENT2_REST..."
-    curl -s "http://localhost:$CLIENT2_REST/set_newde?call=VK4SGE" > /dev/null
+    # Client 2: ax4upstream
+    echo "Setting up $CLIENT2_NAME (ax4upstream) on port $CLIENT2_REST..."
+    curl -s "http://localhost:$CLIENT2_REST/set_newde?call=$CLIENT2_NAME" > /dev/null
     curl -s "http://localhost:$CLIENT2_REST/set_newde?grid=QG63" > /dev/null
     curl -s "http://localhost:$CLIENT2_REST/set_newdx?grid=NJ07" > /dev/null
 }
 
 reload_client() {
     echo "Performing soft-reload for clients via REST API..."
-    # Client 1: VK4SHF
-    echo "Reloading $CLIENT1_NAME (VK4SHF) on port $CLIENT1_REST..."
+    # Client 1: ax4test
+    echo "Reloading $CLIENT1_NAME (ax4test) on port $CLIENT1_REST..."
     curl -s "http://localhost:$CLIENT1_REST/restart" > /dev/null
-    # Client 2: VK4SGE
-    echo "Reloading $CLIENT2_NAME (VK4SGE) on port $CLIENT2_REST..."
+    # Client 2: ax4upstream
+    echo "Reloading $CLIENT2_NAME (ax4upstream) on port $CLIENT2_REST..."
     curl -s "http://localhost:$CLIENT2_REST/restart" > /dev/null
 }
 
