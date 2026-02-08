@@ -145,6 +145,7 @@ def create_bmp_565_header(w, h):
     )
     return header
 
+
 def get_ssn():
     try:
         base_data = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
@@ -159,6 +160,62 @@ def get_ssn():
                         return float(parts[3])
     except: pass
     return 70.0
+
+def get_current_space_wx():
+    """Read current space weather from processed data files"""
+    swx = {
+        'kp': 3.0,
+        'sw_speed': 400.0,
+        'bz': 0.0,
+        'ssn': 70.0  # fallback
+    }
+    
+    try:
+        base_data = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+        processed = os.path.join(base_data, "processed_data")
+        
+        # 1. SSN
+        ssn_val = get_ssn()
+        swx['ssn'] = ssn_val
+
+        # 2. Kp Index (geomag/kindex.txt) - last line is usually prediction or latest
+        kp_path = os.path.join(processed, "geomag", "kindex.txt")
+        if os.path.exists(kp_path):
+             with open(kp_path, "r") as f:
+                lines = [l.strip() for l in f.readlines() if l.strip()]
+                if lines:
+                    # History is 56 lines, Forecast is 16. The "current" is roughly at end of history
+                    # For simplicity, we take the last value of history (roughly 'now') 
+                    # OR just the very last value if we trust the prediction for "now"
+                    # Let's take the 56th value if available (latest observed), else last
+                    idx = 55 if len(lines) > 55 else -1
+                    swx['kp'] = float(lines[idx])
+
+        # 3. Solar Wind Speed (solar-wind/swind-24hr.txt) - format: unix density speed
+        sw_path = os.path.join(processed, "solar-wind", "swind-24hr.txt")
+        if os.path.exists(sw_path):
+            with open(sw_path, "r") as f:
+                lines = [l.strip() for l in f.readlines() if l.strip()]
+                if lines:
+                    # Last line is most recent
+                    parts = lines[-1].split()
+                    if len(parts) >= 3:
+                        swx['sw_speed'] = float(parts[2])
+
+        # 4. Bz (Bz/Bz.txt) - format: unix bx by bz bt
+        bz_path = os.path.join(processed, "Bz", "Bz.txt")
+        if os.path.exists(bz_path):
+            with open(bz_path, "r") as f:
+                lines = [l.strip() for l in f.readlines() if l.strip() and not l.startswith("#")]
+                if lines:
+                    parts = lines[-1].split()
+                    if len(parts) >= 4:
+                        swx['bz'] = float(parts[3])
+
+    except Exception as e:
+        logger.error(f"Error reading space weather: {e}")
+
+    return swx
 
 def get_solar_pos(year, month, day, utc):
     days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
@@ -181,6 +238,10 @@ def calculate_point_propagation(tx_lat, tx_lng, rx_lat, rx_lng, mhz, toa, year, 
     cos_s_dec = math.cos(s_dec_rad)
     sin_s_dec = math.sin(s_dec_rad)
     
+    # Check if we should fetch real SWX or use passed SSN
+    # For point prop, usually just SSN is passed. We can fetch others if needed, 
+    # but to avoid perf hit on single point, maybe just default unless requested?
+    # For now, keep simple behavior but allow ssn to drive muf_base
     muf_base = 5.0 + 0.1 * ssn
     pole_lat = math.radians(80.5)
     pole_lng = math.radians(-72.5)
@@ -189,14 +250,19 @@ def calculate_point_propagation(tx_lat, tx_lng, rx_lat, rx_lng, mhz, toa, year, 
         tx_lat_rad, tx_lng_rad, rx_lat_rad, rx_lng_rad,
         mhz, toa, s_dec_rad, s_lng_rad,
         cos_tx_lat, sin_tx_lat, cos_s_dec, sin_s_dec,
-        muf_base, pole_lat, pole_lng, path=path
+        muf_base, pole_lat, pole_lng, path=path, space_wx={'ssn': ssn}
     )
 
 def calculate_point_propagation_core(tx_lat_rad, tx_lng_rad, rlat_rad, rlng_rad,
                                    m_mhz, toa_param, s_dec_rad, s_lng_rad,
                                    cos_tx_lat, sin_tx_lat, cos_s_dec, sin_s_dec,
-                                   muf_base, pole_lat, pole_lng, path=0):
+                                   muf_base, pole_lat, pole_lng, path=0, space_wx=None):
     """Core pixel/point calculation logic extracted from generate_voacap_response"""
+    if space_wx is None: space_wx = {}
+    kp = space_wx.get('kp', 3.0)
+    bz = space_wx.get('bz', 0.0)
+    sw_speed = space_wx.get('sw_speed', 400.0)
+
     srl = math.sin(rlat_rad)
     crl = math.cos(rlat_rad)
     
@@ -279,7 +345,9 @@ def calculate_point_propagation_core(tx_lat_rad, tx_lng_rad, rlat_rad, rlng_rad,
         pca_loss = math.exp(-1.2 * math.pow(math.sin(m_lat_r), 4.0) * (20.0 / m_mhz)**1.5)
         m_bend = 0.85 + 0.65 * (math.cos(m_lat_r)**2.5) + 1.1 * (math.exp(-((m_lat_d - 15.5)/6.5)**2) + math.exp(-((m_lat_d + 15.5)/6.5)**2))
         
-        p_muf = muf_base * reflection_factor * m_bend
+        # Kp Depression
+        kp_muf_factor = max(0.5, 1.0 - max(0, kp - 3.0) * 0.05)
+        p_muf = muf_base * reflection_factor * m_bend * kp_muf_factor
         sum_muf += p_muf * sample_weights[i]
         
         terminator_h = 1.0 / (1.0 + math.exp(-35.0 * (cos_z_s + 0.04)))
@@ -290,13 +358,35 @@ def calculate_point_propagation_core(tx_lat_rad, tx_lng_rad, rlat_rad, rlng_rad,
         reflection_eff = math.pow(math.cos(math.pi/2.0 - ele_angle), 0.3)
         abs_p = math.exp(-5.0 * terminator_h * zenith_layer * (10.0 / m_mhz)**2.2)
         # Tuned path loss from 0.00006 to 0.000065
+        # Tuned path loss from 0.00006 to 0.000065
         path_loss_factor = 1.0 / (1.0 + 0.000065 * dist_km * (1.0 / max(0.2, combo_f)))
-        p_rel = 1.0 / (1.0 + math.exp(-25.0 * ((p_muf / m_mhz) * res_total * abs_p * reflection_eff * path_loss_factor * pca_loss - 0.70)))
+
+        snr_margin = (p_muf / m_mhz) * res_total * abs_p * reflection_eff * path_loss_factor * pca_loss
+
+        # Space Wx Penalties
+        mag_lat_abs = abs(m_lat_d)
+        in_auroral = mag_lat_abs > (75.0 - 2.0 * kp)
+        
+        if bz < -1.0:
+            bz_penalty = 0.5 if in_auroral else 1.0
+            snr_margin *= bz_penalty
+        
+        if sw_speed > 550.0:
+            sw_penalty = 0.8 if mag_lat_abs > 70 else 1.0
+            snr_margin *= sw_penalty
+
+        exponent = -25.0 * (snr_margin - 0.70)
+        p_rel = 1.0 / (1.0 + math.exp(max(-50, min(50, exponent))))
         sum_rel += p_rel * sample_weights[i]
         
     return sum_muf, sum_rel
 
-def calculate_grid_propagation_vectorized(tx_lat_rad, tx_lng_rad, m_mhz, toa_param, s_dec_rad, s_lng_rad, muf_base, path=0):
+def calculate_grid_propagation_vectorized(tx_lat_rad, tx_lng_rad, m_mhz, toa_param, s_dec_rad, s_lng_rad, muf_base, path=0, space_wx=None):
+    if space_wx is None: space_wx = {}
+    kp = space_wx.get('kp', 3.0)
+    bz = space_wx.get('bz', 0.0)
+    sw_speed = space_wx.get('sw_speed', 400.0)
+
     cos_tx_lat = math.cos(tx_lat_rad)
     sin_tx_lat = math.sin(tx_lat_rad)
     cos_s_dec = math.cos(s_dec_rad)
@@ -348,9 +438,21 @@ def calculate_grid_propagation_vectorized(tx_lat_rad, tx_lng_rad, m_mhz, toa_par
     v_diff_0 = v_rx_0 - v_tx[0]
     v_diff_1 = v_rx_1 - v_tx[1]
     v_diff_2 = v_rx_2 - v_tx[2]
-
+    
     f_trans = 1.0 / (1.0 + pow(m_mhz / 35.0, 2.0))
     dist_km_norm = dist_km / 1000.0
+
+    # Kp/Space Wx Factors
+    # Kp > 3 starts depressing MUF. Kp=9 -> max depression.
+    # Simple linear factor: 1.0 at Kp<=3, dropping to 0.7 at Kp=9?
+    # Let's say 5% per Kp above 3.
+    kp_muf_factor = max(0.5, 1.0 - max(0, kp - 3.0) * 0.05)
+    
+    # Auroral Oval Expansion
+    # Base boundary ~65 deg mag lat? Dynamic with Kp.
+    # Boundary ~ 75 - 2*Kp ?? (Very rough approx)
+    auroral_boundary_deg = 75.0 - 2.0 * kp
+    auroral_boundary_rad = math.radians(auroral_boundary_deg)
 
     for i, frac in enumerate([0.25, 0.5, 0.75]):
         effective_frac = frac
@@ -385,8 +487,17 @@ def calculate_grid_propagation_vectorized(tx_lat_rad, tx_lng_rad, m_mhz, toa_par
         zenith_layer = np.power(np.maximum(0, cos_z_p + 0.1), 0.75)
         azimuth_layer = np.power(np.cos(rel_az), 2.0)
         
+        # Calculate geomagnetic latitude approx (just pole distance)
+        s_mag = sslat * math.sin(pole_lat) + cslat * math.cos(pole_lat) * np.cos(slng - pole_lng)
+        m_lat_r = np.arcsin(np.clip(s_mag, -1.0, 1.0))
+        m_lat_d = np.degrees(m_lat_r)
+        mag_lat_abs = np.abs(m_lat_d)
+
+        # Dynamic Polar Check
+        # If mag lat > boundary, we are in potential auroral zone
+        in_auroral = mag_lat_abs > auroral_boundary_deg
         is_polar = ((s_dec_rad < -0.1) & (slat < -0.8)) | ((s_dec_rad > 0.1) & (slat > 0.8))
-        
+
         reflection_factor = (0.4 + 0.6 * zenith_layer) * (0.8 + 0.2 * azimuth_layer)
         
         mask_night = cos_z_s <= -0.1
@@ -397,14 +508,11 @@ def calculate_grid_propagation_vectorized(tx_lat_rad, tx_lng_rad, m_mhz, toa_par
         
         ref_f = 1.0 + dist_km_norm * (1.0 - cos_z_p) * 0.045 * combo_f * f_trans * (1.1 - 0.1 * azimuth_layer)
         
-        s_mag = sslat * math.sin(pole_lat) + cslat * math.cos(pole_lat) * np.cos(slng - pole_lng)
-        m_lat_r = np.arcsin(np.clip(s_mag, -1.0, 1.0))
-        m_lat_d = np.degrees(m_lat_r)
-        
         pca_loss = np.exp(-1.2 * np.power(np.sin(m_lat_r), 4.0) * (20.0 / m_mhz)**1.5)
         m_bend = 0.85 + 0.65 * (np.cos(m_lat_r)**2.5) + 1.1 * (np.exp(-((m_lat_d - 15.5)/6.5)**2) + np.exp(-((m_lat_d + 15.5)/6.5)**2))
         
-        p_muf = muf_base * reflection_factor * m_bend
+        # Apply Kp Depression to MUF
+        p_muf = muf_base * reflection_factor * m_bend * kp_muf_factor
         sum_muf += p_muf * sample_weights[i]
         
         terminator_h = 1.0 / (1.0 + np.exp(-35.0 * (cos_z_s + 0.04)))
@@ -414,16 +522,60 @@ def calculate_grid_propagation_vectorized(tx_lat_rad, tx_lng_rad, m_mhz, toa_par
         
         res_total = 0.45 + 3.4 * (np.power(np.cos(math.pi * (dist_km / h_len)), 6.0) + 0.55 * np.power(np.cos(math.pi * (dist_km / (h_len * 1.35))), 4.0))
         
-        # ele_angle = np.arctan(900.0 / (np.maximum(20.0, h_len) / 2.0))
-        # Optimized: 
         ele_angle = np.arctan(1800.0 / np.maximum(20.0, h_len))
         
         reflection_eff = np.power(np.cos(math.pi/2.0 - ele_angle), 0.3)
         abs_p = np.exp(-5.0 * terminator_h * zenith_layer * (10.0 / m_mhz)**2.2)
+
+        # Solar Wind / Bz / Auroral Absorption
+        # If in auroral zone and Bz < 0 (Southward), add massive loss
+        # If SW Speed > 500, add generalized noise/loss in high lats
+        # Simplified:
+        extra_loss = np.zeros_like(dist_km)
+        
+        # Bz Effect: If Bz negative, storms intensify.
+        bz_factor = max(0.0, -bz) # Positive value representing southward magnitude
+        if bz_factor > 0:
+             # Add loss in auroral zones proportional to Bz magnitude
+             # e.g., 5 dB per nT? scaled to 0-1 range for equation
+             # Equation is exp(-loss). larger negative exponent = more loss.
+             # existing exponent is ~ -25 * ...
+             # We want to subtract from the exponent or multiply the result by a fraction
+             # Let's reduce abs_p (absorption factor)
+             auroral_dump = np.where(in_auroral, 0.1 * bz_factor, 0.0)
+             # But this implementation calculates P_REL using an exponent equation.
+             # P_REL = 1 / (1 + exp(-25 * (SNR_margin - 0.7)))
+             # Decreasing SNR_margin makes P_REL smaller.
+             pass
+
+        # Sporadic E (Es) / Ducting
+        # Re-enable g_duct but make it conditional?
+        # g_duct = 0.85 * np.exp(-np.square(np.minimum(np.abs(cos_z_tx), np.abs(cos_z_rx)) / 0.07))
+        # This was creating green blobs. 
+        # "Link it to a season/time-of-day probability map or drap data if possible"
+        # For now, let's just use Kp. High Kp suppresses Es in some theories, enhances in others (Auroral Es).
+        # Standard mid-latitude Es is mostly summer daytime.
+        # Let's restore a heavily damped ducting factor for now.
+        g_duct = 0.05 # Conservative baseline
         
         path_loss_factor = 1.0 / (1.0 + 0.000065 * dist_km * (1.0 / np.maximum(0.2, combo_f)))
         
-        exponent = -25.0 * ((p_muf / m_mhz) * res_total * abs_p * reflection_eff * path_loss_factor * pca_loss - 0.70)
+        # Main SNR Margin Calculation
+        snr_margin = (p_muf / m_mhz) * res_total * abs_p * reflection_eff * path_loss_factor * pca_loss
+        
+        # Apply Space Wx Penalties directly to SNR margin
+        # if Bz < -2 and in auroral zone, slash margin
+        if bz < -1.0:
+            # e.g. -5 bz -> 0.8 multiplier?
+            bz_penalty = np.where(in_auroral, 0.5, 1.0)
+            snr_margin *= bz_penalty
+        
+        # Solar wind speed penalty > 500 km/s -> polar cap absorption
+        if sw_speed > 550.0:
+            sw_penalty = np.where(mag_lat_abs > 70, 0.8, 1.0)
+            snr_margin *= sw_penalty
+
+        exponent = -25.0 * (snr_margin - 0.70)
         exponent = np.clip(exponent, -50, 50) 
         p_rel = 1.0 / (1.0 + np.exp(exponent))
         sum_rel += p_rel * sample_weights[i]
@@ -449,7 +601,12 @@ def generate_voacap_response(query, map_type="REL"):
         is_muf = (m_mhz == 0) or (map_type == "MUF")
         is_toa = (map_type == "TOA")
         
-        ssn = get_ssn()
+        # Enhanced Data Ingestion
+        swx = get_current_space_wx()
+        logger.info(f"VOACAP SpcWx: {swx}")
+        
+        ssn = swx['ssn']
+        
         tx_lat_rad = math.radians(tx_lat_d)
         tx_lng_rad = math.radians(tx_lng_d)
         
@@ -462,7 +619,7 @@ def generate_voacap_response(query, map_type="REL"):
         
         grid_muf, grid_rel, grid_dist_km = calculate_grid_propagation_vectorized(
             tx_lat_rad, tx_lng_rad, m_mhz, toa_param, 
-            s_dec_rad, s_lng_rad, muf_base, path=path
+            s_dec_rad, s_lng_rad, muf_base, path=path, space_wx=swx
         )
         
         val_grid = grid_muf if is_muf else grid_rel

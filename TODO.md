@@ -44,3 +44,7 @@
     - [ ] Implement batch verification script (`scripts/batch_compare.py`).
     - [ ] Run full semantic sweep and document remaining discrepancies.
 - [ ] Improve SDO image scaling/quality for better parity.
+
+## Planned Enhancements
+- [ ] **VOACAP**: [Implement Solar Wind/Kp/Bz integration for realistic propagation](docs/VOACAP-ENHANCEMENT-001.md).
+
