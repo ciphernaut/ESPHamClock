@@ -256,7 +256,7 @@ def format_for_hamclock(data, lat, lng):
             desc = "Cloudy"
         
         # Attribution for HamClock - original uses openweathermap.org
-        attribution = "openweathermap.org"
+        attribution = "wttr.in"
         
         # Calculate timezone offset
         try:

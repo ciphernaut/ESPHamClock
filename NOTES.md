@@ -11,3 +11,10 @@
 - **Goal**: Run multiple client instances with different backends to identify discrepancies.
 - **Shadow Mode**: One client tracking the proxy in SHADOW mode (logging but not blocking).
 - **Verify Mode**: Another client or proxy in VERIFY mode to capture authoritative discrepancies.
+
+## Weather Data Sources
+- **Date**: 2026-02-08
+- **Context**: Switched `get_dx.txt` attribution to `wttr.in` (our actual source) instead of mimicking `openweathermap.org`.
+- **Reason**: Discrepancies in weather values (temp, wind, conditions) between the original server (OWM) and our implementation (wttr.in/Open-Meteo).
+- **Impact**: Propagation logic (VOACAP, DRAP) is unaffected as it relies on Space Weather (SSN, Kp), not terrestrial weather.
+- **Future Action**: Explore supporting multiple weather backends (e.g., OWM with user-provided API key vs. keyless wttr.in fallback). Add configuration option.
