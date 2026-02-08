@@ -1,3 +1,8 @@
+---
+name: stack_surgeon
+description: This skill identifies and resolves system-level deadlocks, process hangs, and resource leaks within the HamClock stack.
+---
+
 # Stack Surgeon Skill
 This skill identifies and resolves system-level deadlocks, process hangs, and resource leaks within the HamClock stack.
 

@@ -1,3 +1,8 @@
+---
+name: asset_validator
+description: This skill identifies and resolves integrity issues with binary data files in the HamClock stack.
+---
+
 # Asset Validator Skill
 This skill identifies and resolves integrity issues with binary data files in the HamClock stack.
 
