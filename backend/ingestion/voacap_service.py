@@ -500,7 +500,8 @@ def generate_voacap_response(query, map_type="REL"):
              
              cos_z_tx = sin_tx_lat * sin_s_dec + cos_tx_lat * cos_s_dec * math.cos(tx_lng_rad - s_lng_rad)
 
-             g_duct = 0.85 * np.exp(-np.square(np.minimum(np.abs(cos_z_tx), np.abs(cos_z_rx)) / 0.07))
+             # g_duct = 0.85 * np.exp(-np.square(np.minimum(np.abs(cos_z_tx), np.abs(cos_z_rx)) / 0.07))
+             g_duct = 0.0 # Disabled to remove "Green Blob" artifact
              rel_v = np.round(val_g * 10.0 * (1.0 + g_duct)) * 10.0
              
              if is_toa:
