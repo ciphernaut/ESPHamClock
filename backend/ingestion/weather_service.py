@@ -3,6 +3,9 @@ import os
 import json
 import logging
 import time
+from datetime import datetime
+from timezonefinder import TimezoneFinder
+import pytz
 
 logger = logging.getLogger(__name__)
 
@@ -255,50 +258,23 @@ def format_for_hamclock(data, lat, lng):
         # Attribution for HamClock - original uses openweathermap.org
         attribution = "openweathermap.org"
         
-        # Calculate timezone offset if data is available
-        timezone = 0
+        # Calculate timezone offset
         try:
-            # wttr.in provides localObsDateTime like "2026-02-06 03:55 PM"
-            # and observation_time like "04:55 AM" (usually UTC)
-            # However, it's safer to use the local observation time vs current system time if possible,
-            # but wttr.in doesn't explicitly give UTC in the same format.
-            # Actually, wttr.in JSON contains "current_condition" -> "localObsDateTime".
-            # Let's try to parse localObsDateTime and compare with current UTC.
+            tf = TimezoneFinder()
+            tz_name = tf.timezone_at(lng=lng, lat=lat)
+            if not tz_name:
+                # Fallback for coastal points
+                tz_name = tf.closest_timezone_at(lng=lng, lat=lat)
             
-            # This requires importing datetime
-            from datetime import datetime, timezone as dt_timezone
-            
-            current_condition = data.get('current_condition', [{}])[0]
-            local_str = current_condition.get('localObsDateTime')
-            
-            if local_str:
-                # local_str format: "2026-02-06 03:55 PM"
-                # Parse local time string
-                local_dt_naive = datetime.strptime(local_str, "%Y-%m-%d %I:%M %p")
-                
-                # wttr.in's observation_time is usually UTC, but not always reliable for offset.
-                # A more robust way would be to use a timezone library like pytz or zoneinfo,
-                # but for a simple offset, we can try to infer.
-                # If we assume localObsDateTime is recent, we can compare it to current UTC.
-                # This is still a heuristic.
-                
-                # A better approach for wttr.in is to use the 'utc_offset_seconds' if it were available.
-                # Since it's not directly in wttr.in's current_condition, we fall back to the
-                # longitude-based approximation, which is what HamClock's original backend likely did.
-                # The instruction implies wttr.in *has* localObsDateTime, but doesn't specify how to derive offset from it.
-                # The provided code snippet for the change *also* falls back to the longitude calculation.
-                
-                # Re-evaluating: Open-Meteo is better for this (it provides utc_offset_seconds).
-                # For wttr.in, the naive calculation is what it currently uses, 
-                # and the provided change snippet keeps this as the ultimate fallback.
-                # The comments suggest an attempt to use localObsDateTime but then revert.
-                # Let's stick to the longitude-based calculation for wttr.in as per the provided snippet's logic.
-                timezone = int(round(float(lng) / 15.0) * 3600)
+            if tz_name:
+                tz = pytz.timezone(tz_name)
+                # Get offset for current time (considering DST)
+                timezone = int(tz.utcoffset(datetime.now()).total_seconds())
             else:
-                # Fallback if localObsDateTime is not present
+                # Fallback to longitude based approximation
                 timezone = int(round(float(lng) / 15.0) * 3600)
-        except Exception:
-            # Catch any parsing errors or missing data, fall back to longitude calculation
+        except Exception as e:
+            logger.warning(f"Error calculating timezone: {e}")
             try:
                 timezone = int(round(float(lng) / 15.0) * 3600)
             except:
