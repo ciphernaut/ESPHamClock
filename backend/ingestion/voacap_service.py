@@ -167,6 +167,135 @@ def get_solar_pos(year, month, day, utc):
     sub_lng = (12.0 - utc) * 15.0
     return math.radians(dec), math.radians(sub_lng)
 
+def calculate_point_propagation(tx_lat, tx_lng, rx_lat, rx_lng, mhz, toa, year, month, utc, ssn, path=0):
+    """Refined endpoint for point-to-point propagation matching map logic"""
+    tx_lat_rad = math.radians(tx_lat)
+    tx_lng_rad = math.radians(tx_lng)
+    rx_lat_rad = math.radians(rx_lat)
+    rx_lng_rad = math.radians(rx_lng)
+    
+    cos_tx_lat = math.cos(tx_lat_rad)
+    sin_tx_lat = math.sin(tx_lat_rad)
+    
+    s_dec_rad, s_lng_rad = get_solar_pos(year, month, 15, utc)
+    cos_s_dec = math.cos(s_dec_rad)
+    sin_s_dec = math.sin(s_dec_rad)
+    
+    muf_base = 5.0 + 0.1 * ssn
+    pole_lat = math.radians(80.5)
+    pole_lng = math.radians(-72.5)
+    
+    return calculate_point_propagation_core(
+        tx_lat_rad, tx_lng_rad, rx_lat_rad, rx_lng_rad,
+        mhz, toa, s_dec_rad, s_lng_rad,
+        cos_tx_lat, sin_tx_lat, cos_s_dec, sin_s_dec,
+        muf_base, pole_lat, pole_lng, path=path
+    )
+
+def calculate_point_propagation_core(tx_lat_rad, tx_lng_rad, rlat_rad, rlng_rad,
+                                   m_mhz, toa_param, s_dec_rad, s_lng_rad,
+                                   cos_tx_lat, sin_tx_lat, cos_s_dec, sin_s_dec,
+                                   muf_base, pole_lat, pole_lng, path=0):
+    """Core pixel/point calculation logic extracted from generate_voacap_response"""
+    srl = math.sin(rlat_rad)
+    crl = math.cos(rlat_rad)
+    
+    d_lon = rlng_rad - tx_lng_rad
+    y_dist = math.sin(d_lon) * crl
+    x_dist = cos_tx_lat * srl - sin_tx_lat * crl * math.cos(d_lon)
+    az_rad = math.atan2(y_dist, x_dist)
+    
+    cos_c = sin_tx_lat * srl + cos_tx_lat * crl * math.cos(d_lon)
+    dist_km = math.acos(max(-1.0, min(1.0, cos_c))) * 6371.0
+
+    if path == 1:
+        # Long Path Logic
+        dist_km = 40075.0 - dist_km
+        az_rad = (az_rad + math.pi)
+        while az_rad > math.pi: az_rad -= 2*math.pi
+        while az_rad < -math.pi: az_rad += 2*math.pi
+
+    s_az_tx = math.atan2(math.sin(s_lng_rad - tx_lng_rad) * cos_s_dec,
+                       cos_tx_lat * sin_s_dec - sin_tx_lat * cos_s_dec * math.cos(s_lng_rad - tx_lng_rad))
+    
+    rel_az = abs(az_rad - s_az_tx)
+    while rel_az > math.pi: rel_az -= 2*math.pi
+    while rel_az < -math.pi: rel_az += 2*math.pi
+    
+    gray_tangent_f = 1.0 + 0.45 * math.pow(math.cos(abs(rel_az) - math.pi/2), 4.0)
+    mag_az_f = 1.0 + 0.4 * math.pow(math.cos(az_rad), 2.0)
+    combo_f = (gray_tangent_f + mag_az_f) / 2.0
+    
+    # Path Vectors for mid-point sampling
+    v_tx = (cos_tx_lat * math.cos(tx_lng_rad), cos_tx_lat * math.sin(tx_lng_rad), sin_tx_lat)
+    v_rx = (crl * math.cos(rlng_rad), crl * math.sin(rlng_rad), srl)
+    
+    sample_weights = [0.25, 0.5, 0.25]
+    sum_muf = 0.0
+    sum_rel = 0.0
+    
+    for i, frac in enumerate([0.25, 0.5, 0.75]):
+        if path == 1:
+            effective_frac = frac 
+        else:
+            effective_frac = frac
+
+        v_mid = [v_tx[j] + (v_rx[j] - v_tx[j]) * effective_frac for j in range(3)]
+        if path == 1:
+             v_mid = [ -v for v in v_mid ]
+
+        mag = math.sqrt(sum(v*v for v in v_mid))
+        if mag < 0.001:
+            v_mid = [v_tx[j] + (v_rx[j] - v_tx[j] + 0.001) * frac for j in range(3)]
+            mag = math.sqrt(sum(v*v for v in v_mid))
+        
+        v_n = [v/mag for v in v_mid]
+        slat = math.asin(max(-1.0, min(1.0, v_n[2])))
+        slng = math.atan2(v_n[1], v_n[0])
+        
+        sslat, cslat = math.sin(slat), math.cos(slat)
+        cos_z_s = sslat * sin_s_dec + cslat * cos_s_dec * math.cos(slng - s_lng_rad)
+        
+        s_ang = math.acos(max(-1.0, min(1.0, cos_z_s)))
+        s_proj = math.asin(min(1.0, (6371.0 / 6721.0) * math.sin(s_ang)))
+        cos_z_p = math.cos(s_proj)
+        f_trans = 1.0 / (1.0 + math.pow(m_mhz / 35.0, 2.0))
+        
+        zenith_layer = math.pow(max(0, cos_z_p + 0.1), 0.75)
+        azimuth_layer = math.pow(math.cos(rel_az), 2.0)
+        is_polar = (s_dec_rad < -0.1 and slat < -0.8) or (s_dec_rad > 0.1 and slat > 0.8)
+        
+        reflection_factor = (0.4 + 0.6 * zenith_layer) * (0.8 + 0.2 * azimuth_layer)
+        if cos_z_s <= -0.1:
+            floor = 0.4 * math.cos(slat - s_dec_rad) if is_polar else 0.25
+            reflection_factor = floor + (reflection_factor - floor) * math.exp((cos_z_s + 0.1) * 8.0)
+        
+        ref_f = 1.0 + (dist_km / 1000.0) * (1.0 - cos_z_p) * 0.045 * combo_f * f_trans * (1.1 - 0.1 * azimuth_layer)
+        
+        s_mag = sslat * math.sin(pole_lat) + cslat * math.cos(pole_lat) * math.cos(slng - pole_lng)
+        m_lat_r = math.asin(max(-1.0, min(1.0, s_mag)))
+        m_lat_d = math.degrees(m_lat_r)
+        
+        pca_loss = math.exp(-1.2 * math.pow(math.sin(m_lat_r), 4.0) * (20.0 / m_mhz)**1.5)
+        m_bend = 0.85 + 0.65 * (math.cos(m_lat_r)**2.5) + 1.1 * (math.exp(-((m_lat_d - 15.5)/6.5)**2) + math.exp(-((m_lat_d + 15.5)/6.5)**2))
+        
+        p_muf = muf_base * reflection_factor * m_bend
+        sum_muf += p_muf * sample_weights[i]
+        
+        terminator_h = 1.0 / (1.0 + math.exp(-35.0 * (cos_z_s + 0.04)))
+        h_len = 3100.0 * (1.0 / (1.0 + toa_param/35.0)) * (0.55 + 0.45 * (m_mhz/max(0.5, p_muf))) * ref_f
+        res_total = 0.45 + 3.4 * (math.pow(math.cos(math.pi * (dist_km / h_len)), 6.0) + 0.55 * math.pow(math.cos(math.pi * (dist_km / (h_len * 1.35))), 4.0))
+        
+        ele_angle = math.atan(900.0 / (max(20.0, h_len) / 2.0))
+        reflection_eff = math.pow(math.cos(math.pi/2.0 - ele_angle), 0.3)
+        abs_p = math.exp(-5.0 * terminator_h * zenith_layer * (10.0 / m_mhz)**2.2)
+        # Tuned path loss from 0.00006 to 0.000065
+        path_loss_factor = 1.0 / (1.0 + 0.000065 * dist_km * (1.0 / max(0.2, combo_f)))
+        p_rel = 1.0 / (1.0 + math.exp(-25.0 * ((p_muf / m_mhz) * res_total * abs_p * reflection_eff * path_loss_factor * pca_loss - 0.70)))
+        sum_rel += p_rel * sample_weights[i]
+        
+    return sum_muf, sum_rel
+
 def calculate_grid_propagation_vectorized(tx_lat_rad, tx_lng_rad, m_mhz, toa_param, s_dec_rad, s_lng_rad, muf_base, path=0):
     cos_tx_lat = math.cos(tx_lat_rad)
     sin_tx_lat = math.sin(tx_lat_rad)
