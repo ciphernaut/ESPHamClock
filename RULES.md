@@ -1,3 +1,9 @@
+---
+description: Primary source of truth for project mandates, operational rules, and architectural guidelines.
+version: 1.0.0
+tags: [mandates, rules, architecture, critical]
+---
+
 # ESPHamClock - Project Rules & Mandates
 
 This document serves as the primary source of truth for all project mandates, operational rules, and architectural guidelines. Every contributor and agent MUST adhere to these standards.
