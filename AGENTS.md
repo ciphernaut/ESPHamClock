@@ -2,7 +2,9 @@
 
 > [!IMPORTANT]
 > ## PROJECT GOVERNANCE
-> All agents MUST follow the project mandates and rules defined in [RULES.md](file:///projects/antigravity/ESPHamClock/RULES.md). These include critical requirements for service management, client stability, and data parity.
+> All agents MUST follow the project mandates and rules defined in [RULES.md](file:///projects/antigravity/ESPHamClock/RULES.md). These include critical requirements for service management, client stability, data parity, and **error handling**.
+>
+> **CRITICAL**: Review the **"Stop-and-Think" Protocol** in RULES.md Section 3 before attempting to debug repeated failures.
 
 ## Project Architecture
 ...

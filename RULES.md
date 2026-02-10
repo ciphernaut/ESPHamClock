@@ -8,8 +8,8 @@ This document serves as the primary source of truth for all project mandates, op
 2.  **WORKFLOWS**: Refer to `.agent/workflows/` for standard operating procedures. Specifically, use `manage-stack.md` for service control.
 3.  **LOGGING**: NEVER capture transient logs, debug outputs, or analysis dumps in `/tmp`. ALWAYS use the project `logs/` directory for persistence and visibility.
 4.  **CACHING**: This project relies heavily on file-based caching in `backend/data/processed_data/`. Always check for existing cached data before fetching from upstream.
-5.  **PARITY**: The goal is 1:1 parity with the original HamClock backend. Every line/pixel counts.
 6.  **NO CLIENT CHANGES**: NEVER modify the `client/` source code. The goal is to create a fully functional replacement backend for ALL existing clients. All issues must be resolved on the backend or proxy layers.
+7.  **ERROR HANDLING**: STOP AND THINK. If a tool fails twice, STOP. Do not retry blindly. Verify state before finding a fix.
 
 ---
 
@@ -28,3 +28,19 @@ To achieve the project's core objective of providing a fully functional replacem
 - **Drop-in Replacement**: Modifying the client breaks the "drop-in replacement" promise. If we modify the client to handle backend limitations, we lose compatibility with original hardware.
 - **Backend Adaptation**: The backend must adapt to the client's expectations (e.g., line limits, data intervals, formats).
 - **Parity Validation**: Every change must be validated against the behavior of existing clients to ensure seamless transition.
+
+## 3. Error Handling & Recursion Prevention
+
+To prevent "token burnout" and recursive failure loops, all agents MUST adhere to the following protocols:
+
+### The "Stop-and-Think" Protocol
+If an action (e.g., running a script, restarting a service) fails **twice** in a row:
+1.  **STOP**: Do not attempt a third retry immediately.
+2.  **VERIFY STATE**: Use an independent method (e.g., `curl`, `pgrep`, `tail`) to check the actual state of the system.
+    -   *Example*: If a python script hangs connecting to a port, verify the port is open with `ss -tln` and the service is responsive with `curl` before assuming the script is at fault.
+3.  **ANALYZE**: Read the relevant source code (e.g., `webserver.cpp` for exact parameter handling) before writing a new fix.
+4.  **PLAN**: Formulate a hypothesis that explains *why* the previous two attempts failed.
+
+### Atomic Operations
+-   **No "Kitchen Sink" Changes**: Do not change multiple parameters (e.g., Lat/Lng AND Grid) in a single unverified step. Change one, verify it, then change the next.
+-   **Read Before Write**: Before using an API endpoint, verify its implementation in the source code or `api_index.md`. Do not guess parameter names.
