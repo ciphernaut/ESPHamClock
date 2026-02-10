@@ -22,6 +22,13 @@ To maintain a clean project root and prevent transient debugging data from being
 - **Exclusion**: The `debug/` directory MUST be included in the project's `.gitignore` file.
 - **Organization**: Use subdirectories (e.g., `debug/logs/`, `debug/captured_data/`) to organize outputs.
 
+### Test Scripts & Verification Tools
+All verification scripts, test harnesses, and integrity checks MUST be stored in the `tests/` directory.
+
+- **Objective**: Keep the project root clean for high-level documentation and entry points.
+- **Compliance**: Agents should run `python3 tests/lint_root.py` to self-verify compliance if unsure.
+
+
 ### Client Code Stability & Backend Compatibility
 To achieve the project's core objective of providing a fully functional replacement backend for all existing HamClock clients, the client-side source code MUST NOT be modified for feature enhancements or bug fixes that can be resolved on the backend.
 
