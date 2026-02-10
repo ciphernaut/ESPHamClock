@@ -136,11 +136,13 @@ setup_clients() {
     curl -s "http://localhost:$CLIENT1_REST/set_newde?call=$CLIENT1_NAME" > /dev/null
     curl -s "http://localhost:$CLIENT1_REST/set_newde?grid=QG63" > /dev/null
     curl -s "http://localhost:$CLIENT1_REST/set_newdx?grid=NJ07" > /dev/null
+    curl -s "http://localhost:$CLIENT1_REST/set_voacap?mode=SSB" > /dev/null
     # Client 2: ax4upstream
     echo "Setting up $CLIENT2_NAME (ax4upstream) on port $CLIENT2_REST..."
     curl -s "http://localhost:$CLIENT2_REST/set_newde?call=$CLIENT2_NAME" > /dev/null
     curl -s "http://localhost:$CLIENT2_REST/set_newde?grid=QG63" > /dev/null
     curl -s "http://localhost:$CLIENT2_REST/set_newdx?grid=NJ07" > /dev/null
+    curl -s "http://localhost:$CLIENT2_REST/set_voacap?mode=SSB" > /dev/null
 }
 
 reload_client() {
