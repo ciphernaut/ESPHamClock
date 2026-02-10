@@ -23,10 +23,12 @@ def get_band_conditions(query):
     raw_mode = query.get('MODE', ['CW'])[0]
     mode_map = {
         '38': 'SSB',
-        '39': 'USB',
-        '40': 'LSB',
-        '19': 'FT8',
-        '1': 'CW'
+        '22': 'RTTY',
+        '49': 'AM',
+        '13': 'FT8',
+        '19': 'CW',
+        '17': 'FT4',
+        '3': 'WSPR'
     }
     mode_name = mode_map.get(raw_mode, raw_mode)
     
