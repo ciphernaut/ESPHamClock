@@ -143,6 +143,16 @@ setup_clients() {
     curl -s "http://localhost:$CLIENT2_REST/set_newdx?grid=NJ07" > /dev/null
 }
 
+reload_client() {
+    echo "Performing soft-reload for clients via REST API..."
+    # Client 1: VK4SHF
+    echo "Reloading $CLIENT1_NAME (VK4SHF) on port $CLIENT1_REST..."
+    curl -s "http://localhost:$CLIENT1_REST/restart" > /dev/null
+    # Client 2: VK4SGE
+    echo "Reloading $CLIENT2_NAME (VK4SGE) on port $CLIENT2_REST..."
+    curl -s "http://localhost:$CLIENT2_REST/restart" > /dev/null
+}
+
 case "$COMMAND" in
     start|restart)
         case "$COMPONENT" in
@@ -151,6 +161,13 @@ case "$COMMAND" in
             client)  start_client ;;
             all)     start_backend; start_proxy; start_client ;;
             *) echo "Unknown component: $COMPONENT"; exit 1 ;;
+        esac
+        ;;
+    reload)
+        case "$COMPONENT" in
+            client) reload_client ;;
+            all)    reload_client ;;
+            *) echo "Unknown component: $COMPONENT. Only 'client' or 'all' support reload."; exit 1 ;;
         esac
         ;;
     stop)
@@ -172,7 +189,7 @@ case "$COMMAND" in
         esac
         ;;
     *)
-        echo "Usage: $0 [start|stop|restart|status] [backend|proxy|client|all]"
+        echo "Usage: $0 [start|stop|restart|reload|status] [backend|proxy|client|all]"
         exit 1
         ;;
 esac
