@@ -22,6 +22,12 @@ Compare a specific endpoint between the two clients.
 python3 skills/parity_debug/scripts/compare_endpoint.py http://localhost:8001/get_spacewx.txt http://localhost:8002/get_spacewx.txt get_spacewx.txt
 ```
 
+### 3. Run Full Parity Sweep
+Run a batch comparison across all configured common endpoints.
+```bash
+python3 skills/parity_debug/scripts/batch_compare.py
+```
+
 ## Guidelines for Agents
 - ALWAYS use `compare_endpoint.py` for regression testing after changing backend logic.
 - If a discrepancy is found, check if it's "noise" (like a timestamp) and update `clean_response` in `compare_endpoint.py` to filter it semantically.
