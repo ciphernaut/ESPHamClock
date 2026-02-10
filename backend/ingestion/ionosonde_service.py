@@ -51,7 +51,9 @@ def fetch_ionosonde_data():
                 s_time_str = s.get('time', '').replace('Z', '+00:00')
                 s_dt = datetime.fromisoformat(s_time_str)
                 s_ts = s_dt.timestamp()
-                if (now - s_ts) > 7200: # Older than 2 hours
+                # Allow data up to 24 hours "old" or "future" to handle sim time divergence
+                if abs(now - s_ts) > 86400: 
+                    # logger.debug(f"Discarding station {s.get('station')} due to time diff: {now - s_ts}")
                     continue
             except:
                 continue
@@ -83,6 +85,8 @@ def fetch_ionosonde_data():
 
     except Exception as e:
         logger.error(f"Error fetching ionosonde data: {e}")
+        # Update timestamp to prevent immediate retry on error
+        _ionosonde_cache["timestamp"] = now
         return _ionosonde_cache["data"] # Return stale cache if fetch fails
 
 def haversine_distance(lat1, lon1, lat2, lon2):
