@@ -19,8 +19,10 @@ TERRAIN_MAP = None
 def load_base_maps():
     global COUNTRIES_MAP, TERRAIN_MAP
     try:
-        c_path = "processed_data/map-D-660x330-Countries.bmp"
-        t_path = "processed_data/map-D-660x330-Terrain.bmp"
+        base_data = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+        processed_data = os.path.join(base_data, "processed_data")
+        c_path = os.path.join(processed_data, "map-D-660x330-Countries.bmp")
+        t_path = os.path.join(processed_data, "map-D-660x330-Terrain.bmp")
         if os.path.exists(c_path):
             with open(c_path, "rb") as f:
                 f.seek(122)
@@ -77,7 +79,8 @@ def create_bmp_565_header(w, h):
 
 def get_ssn():
     try:
-        ssn_path = "processed_data/ssn/ssn-31.txt"
+        base_data = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+        ssn_path = os.path.join(base_data, "processed_data", "ssn", "ssn-31.txt")
         if os.path.exists(ssn_path):
             with open(ssn_path, "r") as f:
                 lines = [l.strip() for l in f.readlines() if l.strip()]
