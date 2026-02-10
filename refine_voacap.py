@@ -13,8 +13,8 @@ import numpy as np
 # Configuration
 ORIGINAL_SERVER = "http://clearskyinstitute.com/ham/HamClock/fetchVOACAPArea.pl"
 LOCAL_SERVER_URL = "http://localhost:9086/fetchVOACAPArea.pl"
-LM_STUDIO_URL = os.environ.get("LM_STUDIO_URL", "http://localhost:1234/v1")
-MODEL_ID = os.environ.get("LM_STUDIO_MODEL", "moondream2")
+LM_STUDIO_URL = os.environ.get("LM_STUDIO_URL", "http://127.0.0.1:1234/v1")
+MODEL_ID = os.environ.get("LM_STUDIO_MODEL", "qwen/qwen3-vl-4b")
 
 MAP_W = 660
 MAP_H = 330
