@@ -10,7 +10,7 @@ import parity_checker
 
 PORT = int(os.environ.get("PROXY_PORT", 9085))
 TARGET_HOST = os.environ.get("TARGET_HOST", "clearskyinstitute.com")
-TARGET_PORT = int(os.environ.get("TARGET_PORT", 80))
+TARGET_PORT = int(os.environ.get("TARGET_PORT", 443))
 LOCAL_REPLACEMENT_HOST = "localhost"
 LOCAL_REPLACEMENT_PORT = 9086
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -70,7 +70,10 @@ class ShadowProxy(http.server.SimpleHTTPRequestHandler):
 
     def fetch_from_backend(self, host, port, timeout, path, headers):
         try:
-            conn = http.client.HTTPConnection(host, port, timeout=timeout)
+            if port == 443:
+                conn = http.client.HTTPSConnection(host, port, timeout=timeout)
+            else:
+                conn = http.client.HTTPConnection(host, port, timeout=timeout)
             # Remove host header to avoid conflicts
             clean_headers = {key: val for key, val in headers.items() if key.lower() != 'host'}
             conn.request("GET", path, headers=clean_headers)
@@ -81,6 +84,8 @@ class ShadowProxy(http.server.SimpleHTTPRequestHandler):
             conn.close()
             return status, resp_headers, data
         except Exception as e:
+            print(f"  [ERROR] Method: GET Path: {path} Error: {e}")
+            return 502, [], str(e).encode()
             return 502, [], str(e).encode()
 
     def do_GET(self):
@@ -88,6 +93,7 @@ class ShadowProxy(http.server.SimpleHTTPRequestHandler):
             self.handle_parity()
             return
 
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         print(f"[{timestamp}] Incoming Request ({PROXY_MODE} | Fallback={SHADOW_FALLBACK}): {self.path}")
         
