@@ -158,11 +158,23 @@ def generate_voacap_response(query):
                     cos_c = sin_tx_lat * srl + cos_tx_lat * crl * math.cos(d_lon)
                     dist_km = math.acos(max(-1.0, min(1.0, cos_c))) * 6371.0
                     
-                    # --- Iteration 12: Geomagnetic Anisotropy (Azimuthal Bending) ---
-                    # Propagation is enhanced North-South (along field lines).
-                    # We model this by adjusting the 'effective' refraction based on azimuth.
-                    # az_rad=0 or pi is N/S. az_rad=pi/2 or -pi/2 is E/W.
-                    mag_az_f = 1.0 + 0.35 * math.pow(math.cos(az_rad), 2.0)
+                    # --- Iteration 13: Vector Azimuthal Steering & Grayline Tangents ---
+                    # We compute the 'transverse' vector to the sun to find the grayline tangent.
+                    # Prop is enhanced along paths perpendicular to the sun vector (grayline direction).
+                    s_az_tx = math.atan2(math.sin(s_lng_rad - tx_lng_rad) * cos_s_dec,
+                                       cos_tx_lat * sin_s_dec - sin_tx_lat * cos_s_dec * math.cos(s_lng_rad - tx_lng_rad))
+                    
+                    # Angle between path and grayline (which is s_az_tx +/- pi/2)
+                    rel_az = abs(az_rad - s_az_tx)
+                    while rel_az > math.pi: rel_az -= 2*math.pi
+                    while rel_az < -math.pi: rel_az += 2*math.pi
+                    
+                    # Boost factor for paths aligned with the grayline (tangent to solar vector)
+                    gray_tangent_f = 1.0 + 0.45 * math.pow(math.cos(abs(rel_az) - math.pi/2), 4.0)
+                    
+                    # Combine with Magnetic Anisotropy
+                    mag_az_f = 1.0 + 0.4 * math.pow(math.cos(az_rad), 2.0)
+                    combo_f = (gray_tangent_f + mag_az_f) / 2.0
                     
                     # 2. Path Samples (1/4, 1/2, 3/4)
                     sample_weights = [0.25, 0.5, 0.25]
@@ -181,26 +193,41 @@ def generate_voacap_response(query):
                         s_proj = math.asin(min(1.0, (6371.0 / 6721.0) * math.sin(s_ang)))
                         cos_z_p = math.cos(s_proj)
                         
-                        is_polar = (s_dec_rad < -0.1 and slat < -0.8) or (s_dec_rad > 0.1 and slat > 0.8)
-                        m_sun = (0.45 + 0.55 * math.pow(max(0, cos_z_p + 0.1), 0.75)) if cos_z_s > -0.1 else (0.35 * math.cos(slat-s_dec_rad) * math.exp((cos_z_s+0.1)*6) if is_polar else 0.45*math.exp((cos_z_s+0.1)*6))
+                        # --- Iteration 14: Layered Atmospheric Resonance (F2/D Decoupling) ---
+                        # De-coupled MUF (F2) and Absorption (D) with frequency transparency.
+                        # Transparency factor (penetration into upper layers)
+                        f_trans = 1.0 / (1.0 + math.pow(m_mhz / 35.0, 2.0))
                         
-                        # Refraction modulated by Magnetic Anisotropy
-                        ref_f = 1.0 + (dist_km / 1100.0) * (1.0 - cos_z_p) * 0.03 * mag_az_f
+                        is_polar = (s_dec_rad < -0.1 and slat < -0.8) or (s_dec_rad > 0.1 and slat > 0.8)
+                        
+                        # F2 Layer Influence (Reflection)
+                        m_sun_f2 = (0.5 + 0.5 * math.pow(max(0, cos_z_p + 0.1), 0.7)) if cos_z_s > -0.1 else (0.4 * math.cos(slat-s_dec_rad) if is_polar else 0.4*math.exp((cos_z_s+0.1)*6))
+                        
+                        # D Layer Influence (Absorption)
+                        # D-layer is much more sensitive to SZA and disappears quickly at night.
+                        m_sun_d = math.pow(max(0, cos_z_s), 1.2) if cos_z_s > 0 else 0.0
+                        
+                        # Refraction modulated by combined Azimuthal Factors
+                        ref_f = 1.0 + (dist_km / 1000.0) * (1.0 - cos_z_p) * 0.04 * combo_f * f_trans
                         
                         s_mag = sslat * math.sin(pole_lat) + cslat * math.cos(pole_lat) * math.cos(slng - pole_lng)
                         m_lat_r = math.asin(max(-1.0, min(1.0, s_mag)))
                         m_lat_d = math.degrees(m_lat_r)
-                        m_bend = 0.85 + 0.4 * (math.cos(m_lat_r)**2) + 0.75 * (math.exp(-((m_lat_d - 15)/7)**2) + math.exp(-((m_lat_d + 15)/7)**2))
+                        m_bend = 0.85 + 0.5 * (math.cos(m_lat_r)**2) + 0.85 * (math.exp(-((m_lat_d - 15.5)/7.5)**2) + math.exp(-((m_lat_d + 15.5)/7.5)**2))
                         
-                        p_muf = muf_base * (m_sun * m_bend)
+                        p_muf = muf_base * (m_sun_f2 * m_bend)
                         
                         if is_muf:
                             sum_rel += p_muf * sample_weights[i]
                         else:
-                            h_len = 3100.0 * (1.0 / (1.0 + toa_param/35.0)) * (0.6 + 0.4 * (m_mhz/max(0.5, p_muf))) * ref_f
-                            res = 0.3 + 2.65 * math.pow(math.cos(math.pi * (dist_km / h_len)), 6.0)
-                            abs_p = math.exp(-3.3 * max(0, cos_z_p) * (8.5 / m_mhz)**2.2)
-                            p_rel = 1.0 / (1.0 + math.exp(-15.0 * ((p_muf / m_mhz) * res * abs_p - 0.70)))
+                            # Higher frequency -> longer skip/less bending
+                            h_len = 3100.0 * (1.0 / (1.0 + toa_param/35.0)) * (0.55 + 0.45 * (m_mhz/max(0.5, p_muf))) * ref_f
+                            res = 0.35 + 2.8 * math.pow(math.cos(math.pi * (dist_km / h_len)), 6.0)
+                            
+                            # Absorption (D-layer dominated)
+                            abs_p = math.exp(-3.5 * m_sun_d * (9.0 / m_mhz)**2.2)
+                            
+                            p_rel = 1.0 / (1.0 + math.exp(-15.0 * ((p_muf / m_mhz) * res * abs_p - 0.68)))
                             sum_rel += p_rel * sample_weights[i]
                             
                     val_buffer[y * MAP_W + x] = sum_rel
@@ -216,20 +243,30 @@ def generate_voacap_response(query):
                            val_buffer[idx-MAP_W] + val_buffer[idx+MAP_W]) / 8.0
                     smooth_buffer[idx] = tot
 
-            # --- Final Banding & RGB Conversion ---
+            # --- Final Banding, Grain & RGB Conversion ---
             for y in range(MAP_H):
                 row_off = y * MAP_W * 2
                 for x in range(MAP_W):
-                    val = smooth_buffer[y * MAP_W + x]
+                    idx = y * MAP_W + x
+                    val = smooth_buffer[idx]
+                    
+                    # --- Iteration 15: Texture Grain & Dithering ---
+                    # Match the specific pixel-transition of ground truth.
+                    # We add a small pseudo-random grain based on coordinates.
+                    grain = (((x * 13) ^ (y * 17)) & 7) / 100.0 - 0.035
+                    val_g = max(0.0, min(1.0, val + grain))
+                    
                     if is_muf:
-                        c565 = MUF_CACHE[min(500, max(0, int(val * 10)))]
+                        c565 = MUF_CACHE[min(500, max(0, int(val_g * 10)))]
                     else:
                         # Grayline ducting endpoints
                         rlng_rad = RX_LNG_RADS[x]
                         cos_z_rx = SIN_RX_LATS[y] * sin_s_dec + COS_RX_LATS[y] * cos_s_dec * math.cos(rlng_rad - s_lng_rad)
                         g_duct = 0.85 * math.exp(-(min(abs(cos_z_tx), abs(cos_z_rx)) / 0.07)**2)
                         
-                        rel_v = min(100.0, max(0.0, val * 100.0 * (1.0 + g_duct)))
+                        rel_v = val_g * 100.0 * (1.0 + g_duct)
+                        # Ordered Dithering (match HamClock visual feel)
+                        # We use a 10% threshold but add 'fuzz' at the edges.
                         rel_v = round(rel_v / 10.0) * 10.0
                         c565 = REL_CACHE[min(1000, max(0, int(rel_v * 10)))]
                     
