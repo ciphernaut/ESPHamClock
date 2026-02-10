@@ -424,7 +424,7 @@ def calculate_point_propagation(tx_lat, tx_lng, rx_lat, rx_lng, mhz, toa, year, 
     
     return muf, rel / 100.0
 
-def calculate_grid_propagation_vectorized(tx_lat_rad, tx_lng_rad, m_mhz, toa_param, s_dec_rad, s_lng_rad, muf_base, path=0, space_wx=None):
+def calculate_grid_propagation_vectorized(tx_lat_rad, tx_lng_rad, m_mhz, toa_param, s_dec_rad, s_lng_rad, muf_base, path=0, space_wx=None, signal_margin_db=0.0):
     import numpy as np
     load_base_maps()
     precompute_scales()
@@ -433,6 +433,11 @@ def calculate_grid_propagation_vectorized(tx_lat_rad, tx_lng_rad, m_mhz, toa_par
     kp = space_wx.get('kp', 3.0)
     bz = space_wx.get('bz', 0.0)
     sw_speed = space_wx.get('sw_speed', 400.0)
+
+    # ... (rest of function until loop) ...
+
+    margin_factor_muf = 1.0 + signal_margin_db * 0.012
+    margin_factor_abs = 1.0 + signal_margin_db * 0.008
 
     cos_tx_lat = math.cos(tx_lat_rad)
     sin_tx_lat = math.sin(tx_lat_rad)
@@ -544,6 +549,7 @@ def calculate_grid_propagation_vectorized(tx_lat_rad, tx_lng_rad, m_mhz, toa_par
         m_bend = 0.85 + 0.65 * (np.cos(m_lat_r)**2.5) + 1.1 * (np.exp(-((m_lat_d - 15.5)/6.5)**2) + np.exp(-((m_lat_d + 15.5)/6.5)**2))
         
         p_muf = muf_base * reflection_factor * m_bend * kp_muf_factor
+        p_muf *= margin_factor_muf # Apply signal margin to MUF
         sum_muf += p_muf * sample_weights[i]
         
         terminator_h = 1.0 / (1.0 + np.exp(-35.0 * (cos_z_s + 0.04)))
@@ -557,6 +563,7 @@ def calculate_grid_propagation_vectorized(tx_lat_rad, tx_lng_rad, m_mhz, toa_par
         
         reflection_eff = np.power(np.cos(math.pi/2.0 - ele_angle), 0.3)
         abs_p = np.exp(-5.0 * terminator_h * zenith_layer * (10.0 / m_mhz)**2.2)
+        abs_p *= margin_factor_abs # Apply signal margin to Absorption (Survival)
 
         path_loss_factor = 1.0 / (1.0 + 0.000065 * dist_km * (1.0 / np.maximum(0.2, combo_f)))
         
@@ -575,6 +582,7 @@ def calculate_grid_propagation_vectorized(tx_lat_rad, tx_lng_rad, m_mhz, toa_par
 
 def generate_voacap_response(query, map_type="REL"):
     try:
+        import numpy as np
         t_start = time.time()
         
         target_w = int(query.get('WIDTH', [660])[0])
@@ -602,13 +610,26 @@ def generate_voacap_response(query, map_type="REL"):
         
         s_dec_rad, s_lng_rad = get_solar_pos(year, month, 15, utc)
         muf_base = 5.0 + 0.1 * ssn
+
+        # Map HamClock Mode ID to Name
+        raw_mode = query.get('MODE', ['38'])[0] # Default 38 (SSB)
+        mode_id_map = {
+            '38': 'SSB', '22': 'RTTY', '49': 'AM',
+            '13': 'FT8', '19': 'CW', '17': 'FT4',
+            '3': 'WSPR'
+        }
+        mode_name = mode_id_map.get(raw_mode, 'SSB')
+        
+        watts = float(query.get('WATTS', [100.0])[0])
+        signal_margin = calculate_signal_margin(mode_name, watts)
         
         results = []
         header = create_bmp_565_header(target_w, target_h)
         
         grid_muf, grid_rel, grid_dist_km = calculate_grid_propagation_vectorized(
             tx_lat_rad, tx_lng_rad, m_mhz, toa_param, 
-            s_dec_rad, s_lng_rad, muf_base, path=path, space_wx=swx
+            s_dec_rad, s_lng_rad, muf_base, path=path, space_wx=swx,
+            signal_margin_db=signal_margin
         )
         
         val_grid = grid_muf if is_muf else grid_rel
@@ -620,7 +641,7 @@ def generate_voacap_response(query, map_type="REL"):
         val_b = val_padded[2:, :]
         smooth_val = (val_c * 4.0 + val_l + val_r + val_t + val_b) / 8.0
         
-        import numpy as np
+        
         y_idx, x_idx = np.indices((MAP_H, MAP_W))
         grain = (((x_idx * 13) ^ (y_idx * 17)) & 7) / 100.0 - 0.035
         
@@ -660,7 +681,9 @@ def generate_voacap_response(query, map_type="REL"):
              final_grid = final_grid[row_ind[:, None], col_ind]
 
         pixel_data = final_grid.astype('<u2').tobytes()
-        results.append(zlib.compress(header + pixel_data))
+        img_data = zlib.compress(header + pixel_data)
+        results.append(img_data)
+        results.append(img_data) # Client expects Day and Night maps
             
         return results
 
