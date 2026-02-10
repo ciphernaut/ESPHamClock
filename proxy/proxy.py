@@ -94,7 +94,7 @@ class ShadowProxy(http.server.SimpleHTTPRequestHandler):
 
         # 2. Fetch from Local if needed
         if PROXY_MODE in ["EXCLUSIVE", "SHADOW", "VERIFY"]:
-            local_status, local_headers, local_data = self.fetch_from_backend(LOCAL_REPLACEMENT_HOST, LOCAL_REPLACEMENT_PORT, 5, self.path, self.headers)
+            local_status, local_headers, local_data = self.fetch_from_backend(LOCAL_REPLACEMENT_HOST, LOCAL_REPLACEMENT_PORT, 30, self.path, self.headers)
             if PROXY_MODE == "EXCLUSIVE":
                 print(f"  [EXCLUSIVE MODE] Status: {local_status} ({len(local_data)} bytes)")
                 self.send_backend_response(local_status, local_headers, local_data)
