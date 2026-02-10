@@ -1,7 +1,13 @@
 import requests
-import datetime
 import os
-import re
+import json
+import logging
+import time
+import datetime
+try:
+    from ingestion import onta_service, dxped_service
+except ImportError:
+    import onta_service, dxped_service
 
 # NOAA SWPC endpoints
 SOLAR_INDICES_URL = "https://services.swpc.noaa.gov/text/daily-solar-indices.txt"
@@ -314,42 +320,94 @@ def fetch_noaa_scales():
         print(f"Error fetching NOAA scales: {e}")
 
 def fetch_aurora():
-    """Fetch Aurora probability"""
-    # Spacewx.cpp expects ISO8601 timestamp and a probability
-    # We'll use the ovation latest map and take a representative point or average
+    """Fetch Aurora probability and maintain history"""
     print(f"Fetching Aurora from {AURORA_URL}...")
     try:
         resp = requests.get(AURORA_URL, timeout=10)
         resp.raise_for_status()
         data = resp.json()
         
-        # Simplified: just take the max probability found in the map
-        ts = data.get('Forecast Time', datetime.datetime.utcnow().isoformat())
+        ts = data.get('Forecast Time', datetime.datetime.now(datetime.timezone.utc).isoformat())
         max_prob = 0
         coords = data.get('coordinates', [])
         if coords:
-            # coords is a list of [lon, lat, prob]
             probs = [c[2] for c in coords]
             max_prob = max(probs) if probs else 0
             
-        aurora_file = os.path.join(OUTPUT_DIR, "aurora", "aurora.txt")
-        with open(aurora_file, "w") as f:
-            # Spacewx.cpp expects multiple points (at least 5 recent ones)
-            # Provide 10 points at 1-hour intervals
-            try:
-                dt = datetime.datetime.fromisoformat(ts.replace('Z', '')).replace(tzinfo=datetime.timezone.utc)
-                uts = int(dt.timestamp())
-            except:
-                uts = int(time.time())
+        aurora_dir = os.path.join(OUTPUT_DIR, "aurora")
+        if not os.path.exists(aurora_dir):
+            os.makedirs(aurora_dir)
+        aurora_file = os.path.join(aurora_dir, "aurora.txt")
+        
+        # Load existing
+        history = {}
+        if os.path.exists(aurora_file):
+            with open(aurora_file, "r") as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        history[int(parts[0])] = parts[1]
+                        
+        # Current
+        try:
+            dt = datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
+            uts = int(dt.timestamp())
+        except:
+            uts = int(time.time())
+        # Round to nearest hour for cleaner history
+        uts = (uts // 3600) * 3600
+        history[uts] = str(int(max_prob))
+        
+        # Sort and limit to last 24 hours (or at least 10 points)
+        sorted_uts = sorted(history.keys())
+        # To avoid "arora data invalid" on first run, we pad if too short
+        if len(sorted_uts) < 5:
+            for i in range(5 - len(sorted_uts)):
+                fake_uts = sorted_uts[0] - (i + 1) * 3600
+                history[fake_uts] = "0"
+            sorted_uts = sorted(history.keys())
             
-            for i in range(10):
-                # Simulated historical data: slightly varying probability
-                hist_uts = uts - (9 - i) * 3600
-                hist_prob = max(0, max_prob - (9 - i) * 2) 
-                f.write(f"{hist_uts} {hist_prob}\n")
-        print(f"Saved 10 Aurora records to {aurora_file}")
+        # Keep last 24 points
+        recent_uts = sorted_uts[-24:]
+        
+        with open(aurora_file, "w") as f:
+            for u in recent_uts:
+                f.write(f"{u} {history[u]}\n")
+        print(f"Updated Aurora history with {len(recent_uts)} points")
     except Exception as e:
         print(f"Error fetching Aurora: {e}")
+
+def fetch_onta():
+    """Fetch live ONTA spots via onta_service"""
+    print("Fetching live ONTA spots...")
+    try:
+        data = onta_service.get_onta_data()
+        onta_dir = os.path.join(OUTPUT_DIR, "ONTA")
+        if not os.path.exists(onta_dir):
+            os.makedirs(onta_dir)
+        with open(os.path.join(onta_dir, "onta.txt"), "w") as f:
+            f.write(data)
+        print("Updated ONTA/onta.txt with live spots")
+    except Exception as e:
+        print(f"Error updating ONTA: {e}")
+
+def fetch_dxpeds():
+    """Fetch live DXPeditions via dxped_service"""
+    print("Fetching live DXPeditions...")
+    try:
+        data = dxped_service.get_dxped_data()
+        dxped_dir = os.path.join(OUTPUT_DIR, "dxpeds")
+        if not os.path.exists(dxped_dir):
+            os.makedirs(dxped_dir)
+        # Note: HamClock looks for both dxpeds/dxpeditions.txt and processed_data/dxpeditions.txt 
+        # based on server.py routing.
+        with open(os.path.join(OUTPUT_DIR, "dxpeditions.txt"), "w") as f:
+            f.write(data)
+        with open(os.path.join(dxped_dir, "dxpeditions.txt"), "w") as f:
+            f.write(data)
+        print("Updated dxpeditions.txt with live data")
+    except Exception as e:
+        print(f"Error updating DXPeditions: {e}")
 
 def fetch_static_file(url, filename):
     """Fetch a static file and save it to the output directory"""
@@ -383,12 +441,13 @@ def fetch_all():
     fetch_solar_wind_and_bz()
     fetch_noaa_scales()
     fetch_aurora()
+    fetch_onta()
+    fetch_dxpeds()
     
     # Fetch additional static resources into specific paths
     fetch_static_file(DRAP_URL, "drap/stats.txt")
     fetch_static_file(DXCC_URL, "cty/cty_wt_mod-ll-dxcc.txt")
-    fetch_static_file(ONTA_URL, "ONTA/onta.txt")
-    fetch_static_file(DXPEDS_URL, "dxpeds/dxpeditions.txt")
+    # ONTA and DXPeds are now dynamic
     fetch_static_file(CONTESTS_URL, "contests/contests311.txt")
     fetch_static_file(DST_URL, "dst/dst.txt")
 
