@@ -26,7 +26,7 @@ By default, we run in **SHADOW** mode.
 
 You can see how well our local shims are matching the "real world" by visiting the Parity Dashboard:
 
-**URL**: `http://<your-server-ip>:9086/parity`
+**URL**: `http://<your-server-ip>:9085/parity`
 
 ## Reporting Discrepancies
 
