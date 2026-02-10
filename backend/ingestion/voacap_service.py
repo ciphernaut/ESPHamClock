@@ -231,7 +231,7 @@ def calculate_point_propagation_core(tx_lat_rad, tx_lng_rad, rlat_rad, rlng_rad,
         
         reflection_factor = (0.4 + 0.6 * zenith_layer) * (0.8 + 0.2 * azimuth_layer)
         if cos_z_s <= -0.1:
-            floor = 0.4 * math.cos(slat - s_dec_rad) if is_polar else 0.2
+            floor = 0.4 * math.cos(slat - s_dec_rad) if is_polar else 0.25 # Boosted from 0.2 to 0.25
             reflection_factor = floor + (reflection_factor - floor) * math.exp((cos_z_s + 0.1) * 8.0)
         
         ref_f = 1.0 + (dist_km / 1000.0) * (1.0 - cos_z_p) * 0.045 * combo_f * f_trans * (1.1 - 0.1 * azimuth_layer)
@@ -252,16 +252,20 @@ def calculate_point_propagation_core(tx_lat_rad, tx_lng_rad, rlat_rad, rlng_rad,
         
         ele_angle = math.atan(900.0 / (max(20.0, h_len) / 2.0))
         reflection_eff = math.pow(math.cos(math.pi/2.0 - ele_angle), 0.3)
-        path_loss_factor = 1.0 / (1.0 + 0.00004 * dist_km * (1.0 / max(0.2, combo_f)))
-        
-        abs_p = math.exp(-3.5 * terminator_h * zenith_layer * (10.0 / m_mhz)**2.2)
-        p_rel = 1.0 / (1.0 + math.exp(-18.0 * ((p_muf / m_mhz) * res_total * abs_p * reflection_eff * path_loss_factor * pca_loss - 0.42)))
+        abs_p = math.exp(-3.4 * terminator_h * zenith_layer * (10.0 / m_mhz)**2.2) # Lowered from 3.8/3.5 to 3.4
+        # Tuned path loss from 0.000035 to 0.000032
+        path_loss_factor = 1.0 / (1.0 + 0.000032 * dist_km * (1.0 / max(0.2, combo_f)))
+        p_rel = 1.0 / (1.0 + math.exp(-18.0 * ((p_muf / m_mhz) * res_total * abs_p * reflection_eff * path_loss_factor * pca_loss - 0.38)))
         sum_rel += p_rel * sample_weights[i]
         
     return sum_muf, sum_rel
 
 def generate_voacap_response(query, map_type="REL"):
     try:
+        # Get requested dimensions, default to 660x330 if not specified
+        target_w = int(query.get('WIDTH', [660])[0])
+        target_h = int(query.get('HEIGHT', [330])[0])
+        
         tx_lat_d = float(query.get('TXLAT', [0])[0])
         tx_lng_d = float(query.get('TXLNG', [0])[0])
         m_mhz = float(query.get('MHZ', [14.0])[0])
@@ -274,7 +278,7 @@ def generate_voacap_response(query, map_type="REL"):
         is_muf = (m_mhz == 0) or (map_type == "MUF")
         is_toa = (map_type == "TOA")
         
-        cache_key = f"{tx_lat_d:.2f}_{tx_lng_d:.2f}_{m_mhz:.2f}_{toa_param:.2f}_{year}_{month}_{utc}_{map_type}"
+        cache_key = f"{tx_lat_d:.2f}_{tx_lng_d:.2f}_{m_mhz:.2f}_{toa_param:.2f}_{year}_{month}_{utc}_{map_type}_{target_w}_{target_h}"
         if cache_key in VOACAP_MAP_CACHE:
             logger.debug(f"Serving VOACAP map from cache for {cache_key}")
             return VOACAP_MAP_CACHE[cache_key]
@@ -293,14 +297,24 @@ def generate_voacap_response(query, map_type="REL"):
         pole_lat = math.radians(80.5)
         pole_lng = math.radians(-72.5)
 
-        results = []
-        header = create_bmp_565_header(MAP_W, MAP_H)
+        # Internal calculation dimensions (fixed for performance and base map compatibility)
+        calc_w = 660
+        calc_h = 330
         
+        results = []
+        header = create_bmp_565_header(target_w, target_h)
+        
+        # Precompute solar terms for calc resolution
+        calc_cos_rlng_s_lng = [math.cos(rlng - s_lng_rad) for rlng in RX_LNG_RADS]
+        cos_z_tx = sin_tx_lat * sin_s_dec + cos_tx_lat * cos_s_dec * math.cos(tx_lng_rad - s_lng_rad)
+        g_duct_pre = 0.85
+
         for is_alternate in [False, True]:
-            val_buffer = [0.0] * (MAP_W * MAP_H)
-            for y in range(MAP_H):
+            # Step 1: Calculate raw propagation values at 660x330
+            val_buffer = [0.0] * (calc_w * calc_h)
+            for y in range(calc_h):
                 rlat_rad = RX_LAT_RADS[y]
-                for x in range(MAP_W):
+                for x in range(calc_w):
                     rlng_rad = RX_LNG_RADS[x]
                     p_muf, p_rel = calculate_point_propagation_core(
                         tx_lat_rad, tx_lng_rad, rlat_rad, rlng_rad,
@@ -308,38 +322,37 @@ def generate_voacap_response(query, map_type="REL"):
                         cos_tx_lat, sin_tx_lat, cos_s_dec, sin_s_dec,
                         muf_base, pole_lat, pole_lng, path=path
                     )
-                    val_buffer[y * MAP_W + x] = p_muf if is_muf else p_rel
+                    val_buffer[y * calc_w + x] = p_muf if is_muf else p_rel
 
-            smooth_buffer = list(val_buffer)
-            for y in range(1, MAP_H - 1):
-                for x in range(MAP_W):
-                    idx = y * MAP_W + x
-                    idx_l = y * MAP_W + (x - 1) % MAP_W
-                    idx_r = y * MAP_W + (x + 1) % MAP_W
-                    idx_t = idx - MAP_W
-                    idx_b = idx + MAP_W
-                    smooth_buffer[idx] = (val_buffer[idx]*4.0 + val_buffer[idx_l] + val_buffer[idx_r] + val_buffer[idx_t] + val_buffer[idx_b]) / 8.0
-
-            pixel_data = bytearray(MAP_W * MAP_H * 2)
-            for y in range(MAP_H):
-                row_off = y * MAP_W * 2
-                for x in range(MAP_W):
-                    idx = y * MAP_W + x
-                    val = smooth_buffer[idx]
+            # Step 2: Smooth and convert to 16-bit colors at 660x330
+            calc_colors = [0] * (calc_w * calc_h)
+            for y in range(calc_h):
+                s_rx_dec = SIN_RX_LATS[y] * sin_s_dec
+                c_rx_dec = COS_RX_LATS[y] * cos_s_dec
+                
+                for x in range(calc_w):
+                    idx = y * calc_w + x
+                    # Simple 5-point smooth
+                    idx_l = y * calc_w + (x - 1) % calc_w
+                    idx_r = y * calc_w + (x + 1) % calc_w
+                    idx_t = (y - 1) * calc_w + x if y > 0 else idx
+                    idx_b = (y + 1) * calc_w + x if y < calc_h - 1 else idx
+                    val = (val_buffer[idx]*4.0 + val_buffer[idx_l] + val_buffer[idx_r] + val_buffer[idx_t] + val_buffer[idx_b]) / 8.0
+                    
                     grain = (((x * 13) ^ (y * 17)) & 7) / 100.0 - 0.035
                     val_g = max(0.0, min(1.0 if not is_muf else 50.0, val + (grain if not is_muf else grain*5.0)))
                     
                     if is_muf:
                         c565 = MUF_CACHE[min(500, max(0, int(val_g * 10)))]
                     else:
-                        rlng_rad = RX_LNG_RADS[x]
-                        cos_z_tx = sin_tx_lat * sin_s_dec + cos_tx_lat * cos_s_dec * math.cos(tx_lng_rad - s_lng_rad)
-                        cos_z_rx = SIN_RX_LATS[y] * sin_s_dec + COS_RX_LATS[y] * cos_s_dec * math.cos(rlng_rad - s_lng_rad)
-                        g_duct = 0.85 * math.exp(-(min(abs(cos_z_tx), abs(cos_z_rx)) / 0.07)**2)
+                        cos_z_rx = s_rx_dec + c_rx_dec * calc_cos_rlng_s_lng[x]
+                        g_duct = g_duct_pre * math.exp(-(min(abs(cos_z_tx), abs(cos_z_rx)) / 0.07)**2)
                         rel_v = round(val_g * 10.0 * (1.0 + g_duct)) * 10.0
                         
                         if is_toa:
                             if rel_v > 20.0:
+                                rlng_rad = RX_LNG_RADS[x]
+                                rlat_rad = RX_LAT_RADS[y]
                                 dist_km = math.acos(max(-1.0, min(1.0, sin_tx_lat * SIN_RX_LATS[y] + cos_tx_lat * COS_RX_LATS[y] * math.cos(rlng_rad - tx_lng_rad)))) * 6371.0
                                 c565 = TOA_CACHE[min(400, max(0, int((2.0 + (dist_km/1000.0)*8.0) * 10)))]
                             else: c565 = TOA_CACHE[400]
@@ -349,8 +362,21 @@ def generate_voacap_response(query, map_type="REL"):
                     if is_alternate:
                         r, g, b = (c565 >> 11) & 0x1F, (c565 >> 5) & 0x3F, c565 & 0x1F
                         c565 = ((r >> 1) << 11) | ((g >> 1) << 5) | (b >> 1)
-                    pixel_data[row_off + x*2] = c565 & 0xFF
-                    pixel_data[row_off + x*2 + 1] = (c565 >> 8) & 0xFF
+                    
+                    calc_colors[idx] = c565
+
+            # Step 3: Upscale calc_colors to target resolution
+            pixel_data = bytearray(target_w * target_h * 2)
+            for ty in range(target_h):
+                cy = (ty * calc_h) // target_h
+                row_off = ty * target_w * 2
+                calc_row_off = cy * calc_w
+                for tx in range(target_w):
+                    cx = (tx * calc_w) // target_w
+                    c565 = calc_colors[calc_row_off + cx]
+                    pixel_data[row_off + tx*2] = c565 & 0xFF
+                    pixel_data[row_off + tx*2 + 1] = (c565 >> 8) & 0xFF
+            
             results.append(zlib.compress(header + pixel_data))
         
         if len(VOACAP_MAP_CACHE) >= MAX_CACHE_SIZE: VOACAP_MAP_CACHE.clear()
