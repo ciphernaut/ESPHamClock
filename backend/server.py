@@ -22,6 +22,7 @@ try:
     import voacap_service
     import band_service
     import spacewx_service
+    import map_service
     logger.info("Successfully imported all Group 3 dynamic services")
 except ImportError as e:
     logger.error(f"Failed to import services: {e}")
@@ -159,6 +160,12 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
             local_path = os.path.join(DATA_DIR, rel_path)
             logger.debug(f"Static request for: {path} -> {local_path}")
             
+            if not os.path.exists(local_path):
+                # Try to generate dynamically if missing
+                generated = map_service.ensure_map(rel_path)
+                if generated:
+                    local_path = generated
+
             if os.path.exists(local_path):
                 # Set content type based on extension
                 content_type = "application/octet-stream" if local_path.endswith(".z") else "text/plain"
