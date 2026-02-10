@@ -94,3 +94,43 @@ The following table evaluates the suitability of each plan for the specific map 
 3.  **Clouds:** adopt **Plan 2 (Compositor)**.
     -   Satellite imagery is visual by nature.
     -   Use `ImageMagick` to process high-res public domain images from NASA/NOAA, saving significant development time compared to raw data processing.
+
+---
+
+## Phase 2: Detailed Execution Plan
+
+Based on the Strategic Recommendations, here is the step-by-step plan for implementing the missing maps.
+
+### 1. Weather Map (The "Aggregator")
+**Objective:** Generate a global temperature/pressure map by interpolating the data we already collect in `backend/data/processed_data/worldwx/wx.txt`.
+
+*   **Step 1:** Enhance `weather_grid_service.py` to expose a method `get_weather_dataframe()` that returns a `pandas` DataFrame or `numpy` structured array of `(lat, lng, temp, pressure)`.
+*   **Step 2:** Create `backend/ingestion/weather_map_renderer.py`.
+    *   Use `scipy.interpolate.griddata` (or `matplotlib.tri.Triangulation`) to interpolate the scattered points onto a regular 660x330 grid.
+    *   Map the interpolated temperature values to HamClock's specific color scale (Blue -> Green -> Yellow -> Red).
+    *   Generate isobars (pressure contours) using `matplotlib.pyplot.contour`.
+*   **Step 3:** Render the final image as a BMP565 using `PIL` and save to `backend/data/processed_data/maps/map-D-WxH-Wx.bmp`.
+
+### 2. Cloud Map (The "Compositor")
+**Objective:** Create a global cloud cover map by compositing geostationary satellite imagery.
+
+*   **Step 1:** Create `backend/ingestion/cloud_service.py`.
+*   **Step 2:** Define source URL for a high-quality global composite (e.g., SSEC Real-time Global IR or NASA GIBS).
+*   **Step 3:** Use `subprocess` to call `ImageMagick` (`magick`).
+    *   **Fetch:** Download the source image (usually JPG/PNG).
+    *   **Process:**
+        ```bash
+        magick source.jpg -resize 660x330! -colorspace Gray -level 20%,80% -alpha copy -channel A -negate clouds.png
+        ```
+    *   **Composite:** Overlay `clouds.png` onto the base `Earth_Map_Background.bmp`.
+*   **Step 4:** Convert the final composite to BMP565 format for the client.
+
+### 3. Aurora Map (The "Physics Engine")
+**Objective:** Visualize the Aurora Borealis/Australis probability using the NOAA Ovation Prime model.
+
+*   **Step 1:** Create `backend/ingestion/aurora_service.py`.
+*   **Step 2:** Fetch the latest `ovation_north_24h.json` and `ovation_south_24h.json` from NOAA SWPC.
+*   **Step 3:** Parse the JSON grid (observation points with probability 0-100).
+*   **Step 4:** Use `numpy` to map these probabilities to the HamClock Aurora color ramp (Transparent -> Green -> Red).
+*   **Step 5:** Project the polar data onto the Equirectangular map (Plate Carrée) using `pyproj` or manual trigonometry (similar to `drap_service.py`).
+*   **Step 6:** Blend the North and South auroral ovals onto the base map.
