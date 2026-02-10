@@ -55,14 +55,14 @@ def fetch_and_parse_solar_indices():
         flux_records.append(sw_flux)
 
     # Save SSN (last 31 days)
-    ssn_file = os.path.join(OUTPUT_DIR, "ssn-31.txt")
+    ssn_file = os.path.join(OUTPUT_DIR, "ssn", "ssn-31.txt")
     with open(ssn_file, "w") as f:
         for record in ssn_records[-31:]:
             f.write(f"{record}\n")
     print(f"Saved {len(ssn_records[-31:])} SSN records to {ssn_file}")
 
     # Save Solar Flux (last 99 values - matching SFLUX_NV)
-    flux_file = os.path.join(OUTPUT_DIR, "solarflux-99.txt")
+    flux_file = os.path.join(OUTPUT_DIR, "solar-flux", "solarflux-99.txt")
     with open(flux_file, "w") as f:
         for record in flux_records[-99:]:
             f.write(f"{record}\n")
@@ -122,7 +122,7 @@ def fetch_and_parse_kp():
         while len(total_kp) < 72:
             total_kp.append(total_kp[-1] if total_kp else 0.0)
 
-    kp_file = os.path.join(OUTPUT_DIR, "kindex.txt")
+    kp_file = os.path.join(OUTPUT_DIR, "geomag", "kindex.txt")
     with open(kp_file, "w") as f:
         for val in total_kp[:72]:
             f.write(f"{val:.2f}\n")
@@ -165,10 +165,10 @@ def fetch_xray():
             l_val = long_flux.get(k, 0.0)
             # Format: 2026  1 29  0748   00000  00000     1.89e-08    6.82e-07
             parts = k.split() # YYYY MM DD HHMM
-            formatted = f"{parts[0]:>4} {int(parts[1]):>2} {int(parts[2]):>2}  {parts[3]:>4}   00000  00000    {s_val:8.2e}    {l_val:8.2e}"
+            formatted = f"{parts[0]:>4} {int(parts[1]):>2} {int(parts[2]):>2}  {parts[3]:>4}   00000  00000     {s_val:8.2e}    {l_val:8.2e}"
             records.append(formatted)
         
-        xray_file = os.path.join(OUTPUT_DIR, "xray.txt")
+        xray_file = os.path.join(OUTPUT_DIR, "xray", "xray.txt")
         # Keep approx 24-48 hours of 10-min data
         with open(xray_file, "w") as f:
             for record in records:
@@ -227,12 +227,12 @@ def fetch_solar_wind_and_bz():
                     bz_records.append(f"{ts} : {m[3]} {m[6]}")
                 except (IndexError, ValueError): pass
 
-        swind_file = os.path.join(OUTPUT_DIR, "swind-24hr.txt")
+        swind_file = os.path.join(OUTPUT_DIR, "solar-wind", "swind-24hr.txt")
         with open(swind_file, "w") as f:
             for r in swind_records[-144:]: # Approx 24 hours of 10-min data
                 f.write(f"{r}\n")
         
-        bz_file = os.path.join(OUTPUT_DIR, "Bz.txt")
+        bz_file = os.path.join(OUTPUT_DIR, "Bz", "Bz.txt")
         with open(bz_file, "w") as f:
             for r in bz_records[-144:]:
                 f.write(f"{r}\n")
@@ -255,12 +255,29 @@ def fetch_noaa_scales():
         s = current.get("S", {}).get("value", 0)
         g = current.get("G", {}).get("value", 0)
         
-        scales_file = os.path.join(OUTPUT_DIR, "noaaswx.txt")
+        scales_file = os.path.join(OUTPUT_DIR, "NOAASpaceWX", "noaaswx.txt")
         with open(scales_file, "w") as f:
-            f.write(f"R {r}\n")
-            f.write(f"S {s}\n")
-            f.write(f"G {g}\n")
+            f.write(f"R {r} 0 0 0\n")
+            f.write(f"S {s} 0 0 0\n")
+            f.write(f"G {g} 0 0 0\n")
+            
         print(f"Saved NOAA scales to {scales_file}")
+        
+        # Add rank2_coeffs.txt - original has it, we should too
+        rank_file = os.path.join(OUTPUT_DIR, "NOAASpaceWX", "rank2_coeffs.txt")
+        if not os.path.exists(rank_file):
+            with open(rank_file, "w") as f:
+                f.write("# index a b c\n")
+                f.write("0 0 1 0\n")
+                f.write("1 0 1 0\n")
+                f.write("2 0 1 0\n")
+                f.write("3 0 1 0\n")
+                f.write("4 0 1 0\n")
+                f.write("5 0 1 0\n")
+                f.write("6 0 1 0\n")
+                f.write("7 0 1 0\n")
+                f.write("8 0 1 0\n")
+                f.write("9 0 1 0\n")
     except Exception as e:
         print(f"Error fetching NOAA scales: {e}")
 
@@ -283,7 +300,7 @@ def fetch_aurora():
             probs = [c[2] for c in coords]
             max_prob = max(probs) if probs else 0
             
-        aurora_file = os.path.join(OUTPUT_DIR, "aurora.txt")
+        aurora_file = os.path.join(OUTPUT_DIR, "aurora", "aurora.txt")
         with open(aurora_file, "w") as f:
             f.write(f"{ts.replace('Z', '')} {max_prob}\n")
         print(f"Saved Aurora data to {aurora_file}")
@@ -303,9 +320,19 @@ def fetch_static_file(url, filename):
     except Exception as e:
         print(f"Error fetching {filename}: {e}")
 
-if __name__ == "__main__":
+def fetch_all():
+    """Run all fetchers and update local data files"""
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
+        
+    # Ensure all required subdirectories exist
+    subdirs = ["ssn", "solar-flux", "geomag", "xray", "solar-wind", "Bz", 
+               "aurora", "NOAASpaceWX", "drap", "cty", "ONTA", "dxpeds", "contests", "dst"]
+    for sd in subdirs:
+        path = os.path.join(OUTPUT_DIR, sd)
+        if not os.path.exists(path):
+            os.makedirs(path)
+
     fetch_and_parse_solar_indices()
     fetch_and_parse_kp()
     fetch_xray()
@@ -313,10 +340,13 @@ if __name__ == "__main__":
     fetch_noaa_scales()
     fetch_aurora()
     
-    # Fetch additional static resources
-    fetch_static_file(DRAP_URL, "stats.txt")
-    fetch_static_file(DXCC_URL, "cty_wt_mod-ll-dxcc.txt")
-    fetch_static_file(ONTA_URL, "onta.txt")
-    fetch_static_file(DXPEDS_URL, "dxpeditions.txt")
-    fetch_static_file(CONTESTS_URL, "contests311.txt")
-    fetch_static_file(DST_URL, "dst.txt")
+    # Fetch additional static resources into specific paths
+    fetch_static_file(DRAP_URL, "drap/stats.txt")
+    fetch_static_file(DXCC_URL, "cty/cty_wt_mod-ll-dxcc.txt")
+    fetch_static_file(ONTA_URL, "ONTA/onta.txt")
+    fetch_static_file(DXPEDS_URL, "dxpeds/dxpeditions.txt")
+    fetch_static_file(CONTESTS_URL, "contests/contests311.txt")
+    fetch_static_file(DST_URL, "dst/dst.txt")
+
+if __name__ == "__main__":
+    fetch_all()

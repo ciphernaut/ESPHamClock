@@ -153,9 +153,16 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
         # Current HamClock version is 4.22
         # Original response is exactly 32 bytes including newlines
         # Format: "X.XX\nNo info for version  X.XX\n\n\n"
-        version_text = "4.22\nNo info for version  4.22\n\n\n"
+        # 4.22\n (5) + No info for version  4.22\n (24) + \n\n (2) = 31 bytes? 
+        # Let's count carefully:
+        # '4' '.' '2' '2' '\n' -> 5 bytes
+        # 'N' 'o' ' ' 'i' 'n' 'f' 'o' ' ' 'f' 'o' 'r' ' ' 'v' 'e' 'r' 's' 'i' 'o' 'n' ' ' ' ' '4' '.' '2' '2' '\n' -> 26 bytes
+        # 5 + 26 = 31 bytes.
+        # Adding one more \n gives 32 bytes.
+        version_text = "4.22\nNo info for version  4.22\n\n"
         self.send_response(200)
         self.send_header("Content-type", "text/plain")
+        self.send_header("Content-Length", str(len(version_text)))
         self.end_headers()
         self.wfile.write(version_text.encode('utf-8'))
 
