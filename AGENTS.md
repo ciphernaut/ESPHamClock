@@ -1,3 +1,10 @@
+---
+description: Developer guide, build instructions, and testing workflows for agents.
+type: guide
+related: [RULES.md]
+tags: [development, setup, testing, commands]
+---
+
 # ESPHamClock - Agent Development Guide
 
 > [!IMPORTANT]
