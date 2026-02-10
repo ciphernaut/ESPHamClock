@@ -64,8 +64,12 @@ status_proxy() {
 }
 
 status_client() {
+    check_port $CLIENT1_RO "Client ax4test (RO)"
     check_port $CLIENT1_RW "Client ax4test (RW)"
+    check_port $CLIENT1_REST "Client ax4test (REST)"
+    check_port $CLIENT2_RO "Client ax4upstream (RO)"
     check_port $CLIENT2_RW "Client ax4upstream (RW)"
+    check_port $CLIENT2_REST "Client ax4upstream (REST)"
 }
 
 stop_backend() {
