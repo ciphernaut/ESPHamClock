@@ -17,7 +17,10 @@ try:
     import geoloc_service
     import spot_service
     import weather_service
-    logger.info("Successfully imported geoloc_service, spot_service, and weather_service")
+    import sdo_service
+    import drap_service
+    import voacap_service
+    logger.info("Successfully imported all Group 3 dynamic services")
 except ImportError as e:
     logger.error(f"Failed to import services: {e}")
     # Print to stdout/stderr as well to ensure it's captured
@@ -59,7 +62,9 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
             self.handle_band_conditions(query)
         elif normalized_path in ["/fetchVOACAP-MUF.pl", "/fetchVOACAP-TOA.pl"]:
             self.handle_voacap_map(normalized_path)
-        elif normalized_path in ["/fetchONTA.pl", "/fetchDRAP.pl",
+        elif normalized_path == "/fetchDRAP.pl":
+            self.handle_drap(query)
+        elif normalized_path in ["/fetchONTA.pl", 
                     "/fetchWordWx.pl", "/fetchAurora.pl", "/fetchDXPeds.pl"]:
             # Serve as static for now or implement shim
             self.handle_static(normalized_path)
@@ -70,7 +75,7 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
              or normalized_path.startswith("/aurora/") or normalized_path.startswith("/dst/") or normalized_path.startswith("/NOAASpaceWX/") \
              or normalized_path.startswith("/drap/") or normalized_path.startswith("/cty/") or normalized_path.startswith("/ONTA/") \
              or normalized_path.startswith("/dxpeds/") or normalized_path.startswith("/contests/") \
-             or normalized_path.endswith(".txt"):
+             or normalized_path.endswith(".txt") or normalized_path.endswith(".bmp") or normalized_path.endswith(".bmp.z"):
             # Serve from processed_data
             self.handle_static(normalized_path)
         else:
@@ -168,6 +173,69 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(version_text.encode('utf-8'))
 
+    def handle_voacap_area(self, query):
+        try:
+            logger.info(f"Generating dynamic VOACAP Area map for query: {query}")
+            results = voacap_service.generate_voacap_response(query)
+            if results and len(results) == 2:
+                l1, l2 = len(results[0]), len(results[1])
+                self.send_response(200)
+                self.send_header("Content-type", "application/octet-stream")
+                self.send_header("X-2Z-lengths", f"{l1} {l2}")
+                self.end_headers()
+                self.wfile.write(results[0])
+                self.wfile.write(results[1])
+            else:
+                self.send_error(500, "Failed to generate VOACAP maps")
+        except Exception as e:
+            logger.error(f"Error in handle_voacap_area: {e}", exc_info=True)
+            self.send_error(500, str(e))
+
+    def handle_voacap_map(self, path):
+        try:
+            # Re-use area handler logic, might need adjustment for MUF/TOA specific query params
+            # but usually they use the same parameters
+            from urllib.parse import urlparse, parse_qs
+            query = parse_qs(urlparse(self.path).query)
+            # Ensure MHZ=0 for MUF
+            if "MUF" in path:
+                query['MHZ'] = ['0']
+            
+            logger.info(f"Generating dynamic VOACAP {path} map")
+            results = voacap_service.generate_voacap_response(query)
+            if results and len(results) == 2:
+                l1, l2 = len(results[0]), len(results[1])
+                self.send_response(200)
+                self.send_header("Content-type", "application/octet-stream")
+                self.send_header("X-2Z-lengths", f"{l1} {l2}")
+                self.end_headers()
+                self.wfile.write(results[0])
+                self.wfile.write(results[1])
+            else:
+                self.send_error(500, "Failed to generate VOACAP maps")
+        except Exception as e:
+            logger.error(f"Error in handle_voacap_map: {e}", exc_info=True)
+            self.send_error(500, str(e))
+
+    def handle_rss(self, query):
+        # Shim for RSS feed
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"HamClock Replacement Server Active - Local Source Feed Running\n")
+
+    def handle_drap(self, query):
+        try:
+            # Stats for plots
+            stats = drap_service.get_drap_stats()
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain")
+            self.end_headers()
+            self.wfile.write(stats.encode())
+        except Exception as e:
+            logger.error(f"Error in handle_drap: {e}")
+            self.send_error(500, str(e))
+
     def handle_world_wx(self):
         try:
             # Use the de-proxied original data if available
@@ -203,84 +271,22 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
             logger.error(f"Error in handle_band_conditions: {e}")
             self.send_error(500, str(e))
 
-    def handle_rss(self, query):
-        # Shim for RSS feed
-        self.send_response(200)
-        self.send_header("Content-type", "text/plain")
-        self.end_headers()
-        self.wfile.write(b"HamClock Replacement Server Active - Local Source Feed Running\n")
-
-    def handle_voacap_area(self, query):
-        try:
-            # For now, serve the saved sample with fixed heights
-            # Original: 660x330 (WIDTH=660, HEIGHT=330)
-            sample_path = os.path.join(DATA_DIR, "voacap_area_sample.bin")
-            lengths = "50546 37692"
-            
-            if os.path.exists(sample_path):
-                logger.info(f"Serving VOACAP Area shim data from {sample_path}")
-                with open(sample_path, "rb") as f:
-                    content = f.read()
-                    self.send_response(200)
-                    self.send_header("Content-type", "application/octet-stream")
-                    self.send_header("X-2Z-lengths", lengths)
-                    self.end_headers()
-                    self.wfile.write(content)
-            else:
-                logger.warning(f"VOACAP Area sample not found at {sample_path}")
-                self.send_error(404, "VOACAP sample not available")
-        except (BrokenPipeError, ConnectionResetError) as e:
-            logger.warning(f"Client disconnected during VOACAP response: {e}")
-        except Exception as e:
-            logger.error(f"Error in handle_voacap_area: {e}", exc_info=True)
-            self.send_error(500, str(e))
-
     def handle_sdo(self, path):
         try:
-            # SDO images are compressed .bmp.z
-            # Map all to one sample for now
-            sample_path = os.path.join(DATA_DIR, "sdo_sample.bmp.z")
-            if os.path.exists(sample_path):
-                logger.info(f"Serving SDO shim ({path}) from {sample_path}")
-                with open(sample_path, "rb") as f:
-                    content = f.read()
-                    self.send_response(200)
-                    self.send_header("Content-type", "application/octet-stream")
-                    self.end_headers()
-                    self.wfile.write(content)
+            # SDO images are fetched and processed dynamically
+            img_data = sdo_service.get_sdo_image(path)
+            if img_data:
+                logger.debug(f"Serving live SDO image for {path}")
+                self.send_response(200)
+                self.send_header("Content-type", "application/octet-stream")
+                self.end_headers()
+                self.wfile.write(img_data)
             else:
-                self.send_error(404, "SDO sample not found")
+                self.send_error(404, "SDO image fetch failed")
         except Exception as e:
             logger.error(f"Error in handle_sdo: {e}")
             self.send_error(500, str(e))
 
-    def handle_voacap_map(self, path):
-        try:
-            # For MUF/TOA, they use the same binary format
-            sample_name = "voacap_muf_sample.bin" if "MUF" in path else "voacap_toa_sample.bin"
-            sample_path = os.path.join(DATA_DIR, sample_name)
-            
-            # If specific sample doesn't exist, fallback to Area sample but maybe log it
-            if not os.path.exists(sample_path):
-                sample_path = os.path.join(DATA_DIR, "voacap_area_sample.bin")
-            
-            # MUF/TOA also need lengths, often similar to Area
-            lengths = "50546 37692" # Fallback if unknown
-            
-            if os.path.exists(sample_path):
-                logger.info(f"Serving VOACAP Map shim ({path}) from {sample_path}")
-                with open(sample_path, "rb") as f:
-                    content = f.read()
-                    self.send_response(200)
-                    self.send_header("Content-type", "application/octet-stream")
-                    self.send_header("X-2Z-lengths", lengths)
-                    self.end_headers()
-                    self.wfile.write(content)
-            else:
-                self.send_error(404, "VOACAP map sample not available")
-        except Exception as e:
-            logger.error(f"Error in handle_voacap_map: {e}")
-            self.send_error(500, str(e))
 
     def handle_weather(self, query):
         try:
