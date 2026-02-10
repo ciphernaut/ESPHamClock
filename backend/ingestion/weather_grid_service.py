@@ -53,6 +53,9 @@ def fetch_batch_weather(coords_batch):
     
     try:
         resp = requests.get(url, params=params, timeout=30)
+        if resp.status_code == 429:
+            logger.error("429 Client Error: Too Many Requests for Open-Meteo. Throttling active.")
+            return None
         resp.raise_for_status()
         data = resp.json()
         
@@ -121,9 +124,10 @@ def generate_weather_grid():
     if start_idx >= len(all_coords):
         start_idx = 0
         
-    # Refresh a subset (8 batches of 50 = 400 points per hour)
-    # 3358 / 400 = 8.4 hours to refresh entire world
-    subset_size = 400
+    # Refresh a subset (1 batch of 50 = 50 points per 10 mins)
+    # 3358 / 50 = 67 runs = ~11 hours to refresh entire world
+    # 7,200 points per day (Limit 10,000)
+    subset_size = 50
     batch_size = 50
     end_idx = min(start_idx + subset_size, len(all_coords))
     refresh_coords = all_coords[start_idx:end_idx]
@@ -133,6 +137,9 @@ def generate_weather_grid():
     for i in range(0, len(refresh_coords), batch_size):
         batch = refresh_coords[i:i+batch_size]
         points = fetch_batch_weather(batch)
+        if points is None:
+            # 429 error encountered, stop further requests this run
+            break
         if points:
             for p in points:
                 key = f"{p['lat']},{p['lng']}"
