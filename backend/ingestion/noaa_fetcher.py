@@ -15,7 +15,7 @@ except ImportError:
 SOLAR_INDICES_URL = "https://services.swpc.noaa.gov/text/daily-solar-indices.txt"
 GEO_INDICES_URL = "https://services.swpc.noaa.gov/text/daily-geomagnetic-indices.txt"
 FORECAST_URL = "https://services.swpc.noaa.gov/text/3-day-forecast.txt"
-XRAY_URL = "https://services.swpc.noaa.gov/json/goes/primary/xrays-1-day.json"
+XRAY_URL = "https://services.swpc.noaa.gov/json/goes/primary/xrays-3-day.json"
 SW_PLASMA_URL = "https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json"
 SW_MAG_URL = "https://services.swpc.noaa.gov/products/solar-wind/mag-1-day.json"
 NOAA_SCALES_URL = "https://services.swpc.noaa.gov/products/noaa-scales.json"
@@ -202,7 +202,12 @@ def fetch_xray():
             records.append(formatted)
         
         xray_file = os.path.join(OUTPUT_DIR, "xray", "xray.txt")
-        # Keep approx 24-48 hours of 10-min data
+        # HamClock client specifically requires 150 records (25 hours)
+        if len(records) > 150:
+            records = records[-150:]
+        elif len(records) < 150:
+            print(f"Warning: Only found {len(records)} X-Ray records (need 150).")
+
         with open(xray_file, "w") as f:
             for record in records:
                 f.write(f"{record}\n")
