@@ -47,7 +47,8 @@
 
 ## Planned Enhancements
 - [ ] **Remove Upstream Dependency**: `clearskyinstitute.com` is decommissioning.
-    - [ ] Retire `proxy.py` upstream forwarding logic (Verify/Shadow modes).
+    - [/] Retire `proxy.py` upstream forwarding logic (Verify/Shadow modes).
+        - Implemented `SHADOW_FALLBACK=FALSE` to enforce local-only serving for DUT while preserving parity logging.
     - [ ] **Transition Parity Baseline**: Establish "Previous Stable Local Release" as the new source of truth.
         - Run "Stable" (Baseline) vs "Dev" (Target) instances for regression testing using live local ingestion.
         - Avoid maintenance of static mock datasets.

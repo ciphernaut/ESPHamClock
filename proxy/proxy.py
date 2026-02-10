@@ -25,6 +25,7 @@ PARITY_SUMMARY = os.environ.get("PARITY_SUMMARY", os.path.join(DEBUG_DIR, "logs"
 # VERIFY: Both, Serve Original, Log discrepancies
 # EXCLUSIVE: Only local backend
 PROXY_MODE = os.environ.get("PROXY_MODE", "SHADOW").upper()
+SHADOW_FALLBACK = os.environ.get("SHADOW_FALLBACK", "TRUE").upper() == "TRUE"
 
 class ShadowProxy(http.server.SimpleHTTPRequestHandler):
     def update_parity_summary(self, path, match_result):
@@ -88,7 +89,7 @@ class ShadowProxy(http.server.SimpleHTTPRequestHandler):
             return
 
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-        print(f"[{timestamp}] Incoming Request ({PROXY_MODE}): {self.path}")
+        print(f"[{timestamp}] Incoming Request ({PROXY_MODE} | Fallback={SHADOW_FALLBACK}): {self.path}")
         
         orig_status, orig_headers, orig_data = 0, [], b""
         local_status, local_headers, local_data = 0, [], b""
@@ -118,12 +119,15 @@ class ShadowProxy(http.server.SimpleHTTPRequestHandler):
 
         # 4. Decide what to serve
         if PROXY_MODE == "SHADOW":
-            # Serve local, but fallback to original if local failed (404/500/502)
-            if local_status >= 400 or local_status == 0:
+            # Serve local, check fallback configuration
+            if SHADOW_FALLBACK and (local_status >= 400 or local_status == 0):
                 print(f"  [SHADOW] SERVED ORIGINAL (Fallback): {self.path} (Local failed: {local_status})")
                 self.send_backend_response(orig_status, orig_headers, orig_data)
             else:
-                print(f"  [SHADOW] SERVED LOCAL: {self.path}")
+                if not SHADOW_FALLBACK and (local_status >= 400 or local_status == 0):
+                     print(f"  [SHADOW] SERVED LOCAL (Error): {self.path} (Status: {local_status}, Fallback Disabled)")
+                else:
+                     print(f"  [SHADOW] SERVED LOCAL: {self.path}")
                 self.send_backend_response(local_status, local_headers, local_data)
         elif PROXY_MODE == "VERIFY":
             # Serve original

@@ -103,6 +103,7 @@ start_proxy() {
     stop_proxy
     echo "Starting Shadow Proxy (Port $SHADOW_PROXY_PORT)..."
     export PROXY_MODE=SHADOW
+    export SHADOW_FALLBACK=FALSE
     export PROXY_PORT=$SHADOW_PROXY_PORT
     python3 -u proxy/proxy.py >> "$LOG_DIR/proxy_shadow.log" 2>&1 &
     

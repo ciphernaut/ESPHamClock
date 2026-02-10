@@ -78,7 +78,7 @@ curl http://localhost:8092/                           # ax4upstream (Baseline) W
 
 ### Environment-Specific Verification (Dual-Client)
 In this environment, two HamClock clients are running in parallel to facilitate live parity verification.
-- **ax4test (DUT)**: Points to our local backend via Proxy 1 (Port 9085).
+- **ax4test (DUT)**: Points to our local backend via Proxy 1 (Port 9085). Configured with `SHADOW_FALLBACK=FALSE`, meaning it **only** serves local data (even on error) but still compares with upstream for logging.
 - **ax4upstream (Original)**: Points to the upstream backend via Proxy 2 (Port 9095).
 
 **REST API Comparison Points:**
