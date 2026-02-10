@@ -2,24 +2,24 @@
 
 ## High Priority: Truly Static/Shims
 - [ ] Convert `/ham/HamClock/fetchBandConditions.pl` from shim to dynamic model (SSN/Solar Flux based).
-- [ ] Implement dynamic routing for `/ham/HamClock/fetchONTA.pl` using `onta_service.py`.
-- [ ] Implement dynamic routing for `/ham/HamClock/fetchAurora.pl` using `aurora.txt` (via `noaa_fetcher.py`).
-- [ ] Implement dynamic routing for `/ham/HamClock/fetchDXPeds.pl` using `dxpeditions.txt` (via `dxped_service.py`).
+- [x] Implement dynamic routing for `/ham/HamClock/fetchONTA.pl` using `onta_service.py`.
+- [x] Implement dynamic routing for `/ham/HamClock/fetchAurora.pl` using `aurora.txt` (via `noaa_fetcher.py`).
+- [x] Implement dynamic routing for `/ham/HamClock/fetchDXPeds.pl` using `dxpeditions.txt` (via `dxped_service.py`).
 
 ## Medium Priority: Semi-Static (Upstream Copies)
-- [ ] Localize `/ham/HamClock/worldwx/wx.txt` (generate local weather grid).
+- [x] Localize `/ham/HamClock/worldwx/wx.txt` (via `weather_grid_service.py`).
 - [ ] Convert `/ham/HamClock/contests/contests311.txt` to local ingestion (e.g., WA7BNM).
 - [ ] Calculate `/ham/HamClock/dst/dst.txt` locally from TZ database.
 - [ ] Derive `/ham/HamClock/cty/cty_wt_mod-ll-dxcc.txt` from local `Big CTY` data.
 
 ## Investigation & Bug Fixes
-- [ ] **Fix**: Integrate `drap_service.py` into `scheduler.py` or `noaa_fetcher.py` (Orphaned service).
+- [x] **Fix**: Integrate `drap_service.py` into `noaa_fetcher.py` (Complete).
 - [ ] **Investigate**: Repair 0% parity for `/ham/HamClock/fetchVOACAPArea.pl`.
-- [ ] **Investigate**: Repair 0% parity for `/ham/HamClock/SDO/*.bmp.z` (Check color/header/ImageMagick).
-- [ ] **Investigate**: Repair 0% parity for `/ham/HamClock/solar-wind/swind-24hr.txt` (Check formatting/precision).
+- [x] **Investigate**: Repair 0% parity for `/ham/HamClock/SDO/*.bmp.z` (Header/Patch Fixed).
+- [x] **Investigate**: Repair 0% parity for `/ham/HamClock/solar-wind/swind-24hr.txt` (Formatting Fixed).
 
 ## Next Steps
-1. Integrate orphan services (DRAP).
-2. Implement dynamic model for Band Conditions.
-3. Localize Weather Grid.
-4. Refine Space Weather formatting for parity.
+1. Implement dynamic model for Band Conditions (Solar/Flux based).
+2. Investigate VOACAP area map parity (Binary structure/Blending).
+3. Implement local DST calculation.
+4. Scale up Weather Grid coverage if needed.
