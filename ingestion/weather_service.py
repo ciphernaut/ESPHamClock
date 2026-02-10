@@ -61,6 +61,7 @@ def format_for_hamclock(data, lat, lng):
         nearest = data['nearest_area'][0]
         
         # wttr.in returns strings, need to ensure numeric where expected
+        # USER REMINDER: Do not rely on clearskyinstitute.com. wttr.in provides nearest area name.
         city = nearest.get('areaName', [{'value': 'Unknown'}])[0]['value']
         temp_c = float(current.get('temp_C', '0'))
         pressure = current.get('pressure', '1013')
@@ -68,7 +69,34 @@ def format_for_hamclock(data, lat, lng):
         wind_speed_kmh = float(current.get('windspeedKmph', '0'))
         wind_speed_mps = wind_speed_kmh * 1000 / 3600
         wind_dir = current.get('winddir16Point', 'N')
-        desc = current.get('weatherDesc', [{'value': 'Clear'}])[0]['value']
+        raw_desc = current.get('weatherDesc', [{'value': 'Clear'}])[0]['value']
+        
+        # CONDITION MAPPING: HamClock expects standard short labels
+        condition_map = {
+            "Clear": "Clear",
+            "Sunny": "Sunny",
+            "Partly cloudy": "Partly Cloudy",
+            "Cloudy": "Cloudy",
+            "Overcast": "Overcast",
+            "Mist": "Mist",
+            "Fog": "Fog",
+            "Light rain": "Light Rain",
+            "Rain": "Rain",
+            "Patchy rain intermediate": "Rain",
+            "Heavy rain": "Heavy Rain",
+            "Light snow": "Light Snow",
+            "Snow": "Snow",
+            "Thundery outbreaks possible": "Thunder",
+        }
+        
+        # Simple normalization: capitalize first letter and look up
+        desc = condition_map.get(raw_desc.capitalize(), raw_desc)
+        if "rain" in raw_desc.lower() and desc == raw_desc:
+            desc = "Rain"
+        elif "snow" in raw_desc.lower() and desc == raw_desc:
+            desc = "Snow"
+        elif "cloud" in raw_desc.lower() and desc == raw_desc:
+            desc = "Cloudy"
         
         # Attribution for HamClock - original uses openweathermap.org
         attribution = "openweathermap.org"
