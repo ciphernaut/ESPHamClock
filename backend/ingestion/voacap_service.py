@@ -11,17 +11,24 @@ logger = logging.getLogger(__name__)
 MAP_W = 660
 MAP_H = 330
 
-MUF_CACHE = [0] * 501
-REL_CACHE = [0] * 1001
-TOA_CACHE = [0] * 401
+MUF_CACHE = np.zeros(501, dtype=np.uint16)
+REL_CACHE = np.zeros(1001, dtype=np.uint16)
+TOA_CACHE = np.zeros(401, dtype=np.uint16)
 
 # Simple result cache
 VOACAP_MAP_CACHE = {}
 MAX_CACHE_SIZE = 100
 
+# Global Base Maps (loaded on start)
 COUNTRIES_MAP = None
 TERRAIN_MAP = None
 COUNTRIES_MASK = None
+
+# Precompute grids for vectorization
+RX_LAT_RADS_GRID = None
+RX_LNG_RADS_GRID = None
+SIN_RX_LATS_GRID = None
+COS_RX_LATS_GRID = None
 
 def load_base_maps():
     global COUNTRIES_MAP, TERRAIN_MAP, COUNTRIES_MASK
@@ -37,17 +44,16 @@ def load_base_maps():
         if os.path.exists(c_path):
             with open(c_path, "rb") as f:
                 f.seek(122)
-                COUNTRIES_MAP = struct.unpack('<' + 'H'*(MAP_W*MAP_H), f.read(MAP_W*MAP_H*2))
+                COUNTRIES_MAP = np.frombuffer(f.read(MAP_W*MAP_H*2), dtype='<u2').reshape(MAP_H, MAP_W)
         
         if os.path.exists(t_path):
             with open(t_path, "rb") as f:
                 f.seek(122)
-                TERRAIN_MAP = struct.unpack('<' + 'H'*(MAP_W*MAP_H), f.read(MAP_W*MAP_H*2))
+                TERRAIN_MAP = np.frombuffer(f.read(MAP_W*MAP_H*2), dtype='<u2').reshape(MAP_H, MAP_W)
                 
         if os.path.exists(mask_path):
             with open(mask_path, "rb") as f:
-                COUNTRIES_MASK = np.frombuffer(f.read(), dtype=np.uint16)
-                logger.info(f"Loaded countries mask, {np.sum(COUNTRIES_MASK)} pixels.")
+                COUNTRIES_MASK = np.frombuffer(f.read(), dtype=np.uint16).reshape(MAP_H, MAP_W)
         else:
             logger.warning(f"Countries mask not found at {mask_path}")
             
@@ -56,17 +62,29 @@ def load_base_maps():
 
 load_base_maps()
 
-def blend_rgb565(fg, bg, alpha):
-    """Blend two RGB565 colors. alpha is 0.0 to 1.0 (1.0 = full foreground)"""
-    if alpha >= 1.0: return fg
-    if alpha <= 0.0: return bg
+def blend_rgb565_vectorized(fg, bg, alpha):
+    """Vectorized blend of RGB565 arrays."""
+    # Expand FG
+    r1 = (fg >> 11) & 0x1F
+    g1 = (fg >> 5) & 0x3F
+    b1 = fg & 0x1F
     
-    r1, g1, b1 = (fg >> 11) & 0x1F, (fg >> 5) & 0x3F, fg & 0x1F
-    r2, bg_raw_g, b2 = (bg >> 11) & 0x1F, (bg >> 5) & 0x3F, bg & 0x1F
+    # Expand BG
+    r2 = (bg >> 11) & 0x1F
+    bg_raw_g = (bg >> 5) & 0x3F
+    b2 = bg & 0x1F
     
-    r = min(31, int(r1 * alpha + r2 * (1.0 - alpha)))
-    g = min(63, int(g1 * alpha + bg_raw_g * (1.0 - alpha)))
-    b = min(31, int(b1 * alpha + b2 * (1.0 - alpha)))
+    # Alpha must be broadcastable to fg/bg shape
+    # If alpha is scalar, it works. If alpha is array, it must match.
+    
+    inv_alpha = 1.0 - alpha
+    r = (r1 * alpha + r2 * inv_alpha).astype(np.uint16)
+    g = (g1 * alpha + bg_raw_g * inv_alpha).astype(np.uint16)
+    b = (b1 * alpha + b2 * inv_alpha).astype(np.uint16)
+    
+    np.clip(r, 0, 31, out=r)
+    np.clip(g, 0, 63, out=g)
+    np.clip(b, 0, 31, out=b)
     
     return (r << 11) | (g << 5) | b
 
@@ -87,12 +105,26 @@ def interpolate_color_value(val, scale):
     return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
 
 def precompute_scales():
+    global RX_LAT_RADS_GRID, RX_LNG_RADS_GRID, SIN_RX_LATS_GRID, COS_RX_LATS_GRID
+    
     m_scale = [(0, 0), (4, 0x4E138A), (9, 0x001EF5), (15, 0x78FBD6), (20, 0x78FA4D), (27, 0xFEFD54), (30, 0xEC6F2D), (35, 0xE93323)]
     r_scale = [(0, 0x666666), (21, 0xEE6766), (40, 0xEEEE44), (60, 0xEEEE44), (83, 0x44CC44), (100, 0x44CC44)]
     t_scale = [(0, 0x44CC44), (5, 0x44CC44), (15, 0xEEEE44), (25, 0xEE6766), (40, 0x666666)]
+    
     for i in range(501): MUF_CACHE[i] = interpolate_color_value(i / 10.0, m_scale)
     for i in range(1001): REL_CACHE[i] = interpolate_color_value(i / 10.0, r_scale)
     for i in range(401): TOA_CACHE[i] = interpolate_color_value(i / 10.0, t_scale)
+
+    # Precompute Lat/Lng Grids
+    lat_vals = np.array([90.0 - (y * 180.0 / MAP_H) for y in range(MAP_H)])
+    lng_vals = np.array([-180.0 + (x * 360.0 / MAP_W) for x in range(MAP_W)])
+    
+    rx_lat_rads = np.radians(lat_vals)
+    rx_lng_rads = np.radians(lng_vals)
+    
+    RX_LNG_RADS_GRID, RX_LAT_RADS_GRID = np.meshgrid(rx_lng_rads, rx_lat_rads)
+    SIN_RX_LATS_GRID = np.sin(RX_LAT_RADS_GRID)
+    COS_RX_LATS_GRID = np.cos(RX_LAT_RADS_GRID)
 
 precompute_scales()
 
@@ -128,14 +160,6 @@ def get_ssn():
     except: pass
     return 70.0
 
-# Precompute RX information
-RX_LAT_VALS = [90.0 - (y * 180.0 / MAP_H) for y in range(MAP_H)]
-RX_LNG_VALS = [-180.0 + (x * 360.0 / MAP_W) for x in range(MAP_W)]
-RX_LAT_RADS = [math.radians(lat) for lat in RX_LAT_VALS]
-RX_LNG_RADS = [math.radians(lng) for lng in RX_LNG_VALS]
-COS_RX_LATS = [math.cos(r) for r in RX_LAT_RADS]
-SIN_RX_LATS = [math.sin(r) for r in RX_LAT_RADS]
-
 def get_solar_pos(year, month, day, utc):
     days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
     doy = sum(days_in_month[:month-1]) + day
@@ -143,155 +167,144 @@ def get_solar_pos(year, month, day, utc):
     sub_lng = (12.0 - utc) * 15.0
     return math.radians(dec), math.radians(sub_lng)
 
-def calculate_point_propagation(tx_lat, tx_lng, rx_lat, rx_lng, mhz, toa, year, month, utc, ssn, path=0):
-    """Refined endpoint for point-to-point propagation matching map logic"""
-    tx_lat_rad = math.radians(tx_lat)
-    tx_lng_rad = math.radians(tx_lng)
-    rx_lat_rad = math.radians(rx_lat)
-    rx_lng_rad = math.radians(rx_lng)
-    
+def calculate_grid_propagation_vectorized(tx_lat_rad, tx_lng_rad, m_mhz, toa_param, s_dec_rad, s_lng_rad, muf_base, path=0):
     cos_tx_lat = math.cos(tx_lat_rad)
     sin_tx_lat = math.sin(tx_lat_rad)
-    
-    s_dec_rad, s_lng_rad = get_solar_pos(year, month, 15, utc)
     cos_s_dec = math.cos(s_dec_rad)
     sin_s_dec = math.sin(s_dec_rad)
-    
-    muf_base = 5.0 + 0.1 * ssn
     pole_lat = math.radians(80.5)
     pole_lng = math.radians(-72.5)
-    
-    return calculate_point_propagation_core(
-        tx_lat_rad, tx_lng_rad, rx_lat_rad, rx_lng_rad,
-        mhz, toa, s_dec_rad, s_lng_rad,
-        cos_tx_lat, sin_tx_lat, cos_s_dec, sin_s_dec,
-        muf_base, pole_lat, pole_lng, path=path
-    )
 
-def calculate_point_propagation_core(tx_lat_rad, tx_lng_rad, rlat_rad, rlng_rad,
-                                   m_mhz, toa_param, s_dec_rad, s_lng_rad,
-                                   cos_tx_lat, sin_tx_lat, cos_s_dec, sin_s_dec,
-                                   muf_base, pole_lat, pole_lng, path=0):
-    """Core pixel/point calculation logic extracted from generate_voacap_response"""
-    srl = math.sin(rlat_rad)
-    crl = math.cos(rlat_rad)
-    
+    rlat_rad = RX_LAT_RADS_GRID
+    rlng_rad = RX_LNG_RADS_GRID
+    srl = SIN_RX_LATS_GRID
+    crl = COS_RX_LATS_GRID
+
     d_lon = rlng_rad - tx_lng_rad
-    y_dist = math.sin(d_lon) * crl
-    x_dist = cos_tx_lat * srl - sin_tx_lat * crl * math.cos(d_lon)
-    az_rad = math.atan2(y_dist, x_dist)
+    cos_d_lon = np.cos(d_lon)
     
-    cos_c = sin_tx_lat * srl + cos_tx_lat * crl * math.cos(d_lon)
-    dist_km = math.acos(max(-1.0, min(1.0, cos_c))) * 6371.0
-
-    if path == 1:
-        # Long Path Logic
+    y_dist = np.sin(d_lon) * crl
+    x_dist = cos_tx_lat * srl - sin_tx_lat * crl * cos_d_lon
+    az_rad = np.arctan2(y_dist, x_dist)
+    
+    cos_c = sin_tx_lat * srl + cos_tx_lat * crl * cos_d_lon
+    cos_c = np.clip(cos_c, -1.0, 1.0)
+    dist_km = np.arccos(cos_c) * 6371.0
+    
+    if path == 1: # Long Path
         dist_km = 40075.0 - dist_km
-        az_rad = (az_rad + math.pi)
-        while az_rad > math.pi: az_rad -= 2*math.pi
-        while az_rad < -math.pi: az_rad += 2*math.pi
+        az_rad = (az_rad + np.pi)
+        az_rad = (az_rad + np.pi) % (2 * np.pi) - np.pi
 
     s_az_tx = math.atan2(math.sin(s_lng_rad - tx_lng_rad) * cos_s_dec,
                        cos_tx_lat * sin_s_dec - sin_tx_lat * cos_s_dec * math.cos(s_lng_rad - tx_lng_rad))
     
-    rel_az = abs(az_rad - s_az_tx)
-    while rel_az > math.pi: rel_az -= 2*math.pi
-    while rel_az < -math.pi: rel_az += 2*math.pi
+    rel_az = np.abs(az_rad - s_az_tx)
+    rel_az = (rel_az + np.pi) % (2 * np.pi) - np.pi
     
-    gray_tangent_f = 1.0 + 0.45 * math.pow(math.cos(abs(rel_az) - math.pi/2), 4.0)
-    mag_az_f = 1.0 + 0.4 * math.pow(math.cos(az_rad), 2.0)
+    gray_tangent_f = 1.0 + 0.45 * np.power(np.cos(np.abs(rel_az) - np.pi/2), 4.0)
+    mag_az_f = 1.0 + 0.4 * np.power(np.cos(az_rad), 2.0)
     combo_f = (gray_tangent_f + mag_az_f) / 2.0
     
-    # Path Vectors for mid-point sampling
-    v_tx = (cos_tx_lat * math.cos(tx_lng_rad), cos_tx_lat * math.sin(tx_lng_rad), sin_tx_lat)
-    v_rx = (crl * math.cos(rlng_rad), crl * math.sin(rlng_rad), srl)
+    v_tx = np.array([cos_tx_lat * math.cos(tx_lng_rad), cos_tx_lat * math.sin(tx_lng_rad), sin_tx_lat])
     
-    # For Long Path sampling, we use the vector opposite to the Short Path cord direction
-    if path == 1:
-        # Vector from TX to RX in 3D
-        v_diff = [v_rx[j] - v_tx[j] for j in range(3)]
-        # We want to go around the other way. 
-        # A simple approximation for sampling along the Long Path:
-        # Sample points on the opposite arc.
-        v_rx_lp = [ -v for v in v_rx ] # Not exactly right but better than linear through core
-        # Better: Sample points as if we are going the other way.
-        pass
+    v_rx_0 = crl * np.cos(rlng_rad)
+    v_rx_1 = crl * np.sin(rlng_rad)
+    v_rx_2 = srl
 
+    sum_muf = np.zeros_like(dist_km)
+    sum_rel = np.zeros_like(dist_km)
     sample_weights = [0.25, 0.5, 0.25]
-    sum_muf = 0.0
-    sum_rel = 0.0
     
+    v_diff_0 = v_rx_0 - v_tx[0]
+    v_diff_1 = v_rx_1 - v_tx[1]
+    v_diff_2 = v_rx_2 - v_tx[2]
+
+    f_trans = 1.0 / (1.0 + pow(m_mhz / 35.0, 2.0))
+    dist_km_norm = dist_km / 1000.0
+
     for i, frac in enumerate([0.25, 0.5, 0.75]):
+        effective_frac = frac
+        vm_0 = v_tx[0] + v_diff_0 * effective_frac
+        vm_1 = v_tx[1] + v_diff_1 * effective_frac
+        vm_2 = v_tx[2] + v_diff_2 * effective_frac
+        
         if path == 1:
-            # Long path sampling approx: 
-            # We sample at 0.1, 0.5, 0.9 of the SP arc but flipped? No.
-            # Let's just use the same logic but adjust the effective distance.
-            effective_frac = frac 
-        else:
-            effective_frac = frac
+             vm_0 = -vm_0
+             vm_1 = -vm_1
+             vm_2 = -vm_2
 
-        v_mid = [v_tx[j] + (v_rx[j] - v_tx[j]) * effective_frac for j in range(3)]
-        if path == 1:
-            # Shift mid points for Long Path.
-            # v_mid is on the SP chord. The LP "mid" is roughly -v_mid mirrored across the Earth center.
-            # If frac=0.5, mid point is exactly opposite to SP mid point.
-            v_mid = [ -v for v in v_mid ]
-
-        mag = math.sqrt(sum(v*v for v in v_mid))
-        if mag < 0.001:
-            v_mid = [v_tx[j] + (v_rx[j] - v_tx[j] + 0.001) * frac for j in range(3)]
-            mag = math.sqrt(sum(v*v for v in v_mid))
+        mag = np.sqrt(vm_0*vm_0 + vm_1*vm_1 + vm_2*vm_2)
+        mag[mag < 0.001] = 1.0 
         
-        v_n = [v/mag for v in v_mid]
-        slat = math.asin(max(-1.0, min(1.0, v_n[2])))
-        slng = math.atan2(v_n[1], v_n[0])
+        vn_0 = vm_0 / mag
+        vn_1 = vm_1 / mag
+        vn_2 = vm_2 / mag
         
-        sslat, cslat = math.sin(slat), math.cos(slat)
-        cos_z_s = sslat * sin_s_dec + cslat * cos_s_dec * math.cos(slng - s_lng_rad)
+        slat = np.arcsin(np.clip(vn_2, -1.0, 1.0))
+        slng = np.arctan2(vn_1, vn_0)
         
-        s_ang = math.acos(max(-1.0, min(1.0, cos_z_s)))
-        s_proj = math.asin(min(1.0, (6371.0 / 6721.0) * math.sin(s_ang)))
-        cos_z_p = math.cos(s_proj)
-        f_trans = 1.0 / (1.0 + math.pow(m_mhz / 35.0, 2.0))
+        sslat = np.sin(slat)
+        cslat = np.cos(slat)
         
-        zenith_layer = math.pow(max(0, cos_z_p + 0.1), 0.75)
-        azimuth_layer = math.pow(math.cos(rel_az), 2.0)
-        is_polar = (s_dec_rad < -0.1 and slat < -0.8) or (s_dec_rad > 0.1 and slat > 0.8)
+        cos_z_s = sslat * sin_s_dec + cslat * cos_s_dec * np.cos(slng - s_lng_rad)
+        
+        s_ang = np.arccos(np.clip(cos_z_s, -1.0, 1.0))
+        s_proj = np.arcsin(np.clip((6371.0 / 6721.0) * np.sin(s_ang), -1.0, 1.0))
+        cos_z_p = np.cos(s_proj)
+        
+        zenith_layer = np.power(np.maximum(0, cos_z_p + 0.1), 0.75)
+        azimuth_layer = np.power(np.cos(rel_az), 2.0)
+        
+        is_polar = ((s_dec_rad < -0.1) & (slat < -0.8)) | ((s_dec_rad > 0.1) & (slat > 0.8))
         
         reflection_factor = (0.4 + 0.6 * zenith_layer) * (0.8 + 0.2 * azimuth_layer)
-        if cos_z_s <= -0.1:
-            floor = 0.4 * math.cos(slat - s_dec_rad) if is_polar else 0.25 # Boosted from 0.2 to 0.25
-            reflection_factor = floor + (reflection_factor - floor) * math.exp((cos_z_s + 0.1) * 8.0)
         
-        ref_f = 1.0 + (dist_km / 1000.0) * (1.0 - cos_z_p) * 0.045 * combo_f * f_trans * (1.1 - 0.1 * azimuth_layer)
+        mask_night = cos_z_s <= -0.1
+        if np.any(mask_night):
+             floor = np.where(is_polar, 0.4 * np.cos(slat - s_dec_rad), 0.25)
+             rf_night = floor + (reflection_factor - floor) * np.exp((cos_z_s + 0.1) * 8.0)
+             reflection_factor = np.where(mask_night, rf_night, reflection_factor)
         
-        s_mag = sslat * math.sin(pole_lat) + cslat * math.cos(pole_lat) * math.cos(slng - pole_lng)
-        m_lat_r = math.asin(max(-1.0, min(1.0, s_mag)))
-        m_lat_d = math.degrees(m_lat_r)
+        ref_f = 1.0 + dist_km_norm * (1.0 - cos_z_p) * 0.045 * combo_f * f_trans * (1.1 - 0.1 * azimuth_layer)
         
-        pca_loss = math.exp(-1.2 * math.pow(math.sin(m_lat_r), 4.0) * (20.0 / m_mhz)**1.5)
-        m_bend = 0.85 + 0.65 * (math.cos(m_lat_r)**2.5) + 1.1 * (math.exp(-((m_lat_d - 15.5)/6.5)**2) + math.exp(-((m_lat_d + 15.5)/6.5)**2))
+        s_mag = sslat * math.sin(pole_lat) + cslat * math.cos(pole_lat) * np.cos(slng - pole_lng)
+        m_lat_r = np.arcsin(np.clip(s_mag, -1.0, 1.0))
+        m_lat_d = np.degrees(m_lat_r)
+        
+        pca_loss = np.exp(-1.2 * np.power(np.sin(m_lat_r), 4.0) * (20.0 / m_mhz)**1.5)
+        m_bend = 0.85 + 0.65 * (np.cos(m_lat_r)**2.5) + 1.1 * (np.exp(-((m_lat_d - 15.5)/6.5)**2) + np.exp(-((m_lat_d + 15.5)/6.5)**2))
         
         p_muf = muf_base * reflection_factor * m_bend
         sum_muf += p_muf * sample_weights[i]
         
-        terminator_h = 1.0 / (1.0 + math.exp(-35.0 * (cos_z_s + 0.04)))
-        h_len = 3100.0 * (1.0 / (1.0 + toa_param/35.0)) * (0.55 + 0.45 * (m_mhz/max(0.5, p_muf))) * ref_f
-        res_total = 0.45 + 3.4 * (math.pow(math.cos(math.pi * (dist_km / h_len)), 6.0) + 0.55 * math.pow(math.cos(math.pi * (dist_km / (h_len * 1.35))), 4.0))
+        terminator_h = 1.0 / (1.0 + np.exp(-35.0 * (cos_z_s + 0.04)))
         
-        ele_angle = math.atan(900.0 / (max(20.0, h_len) / 2.0))
-        reflection_eff = math.pow(math.cos(math.pi/2.0 - ele_angle), 0.3)
-        abs_p = math.exp(-5.0 * terminator_h * zenith_layer * (10.0 / m_mhz)**2.2) # Adjusted from 5.2 to 5.0
-        # Tuned path loss from 0.00006 to 0.000065
-        path_loss_factor = 1.0 / (1.0 + 0.000065 * dist_km * (1.0 / max(0.2, combo_f)))
-        p_rel = 1.0 / (1.0 + math.exp(-25.0 * ((p_muf / m_mhz) * res_total * abs_p * reflection_eff * path_loss_factor * pca_loss - 0.70))) # Increased slope and offset
+        safe_p_muf = np.maximum(0.5, p_muf)
+        h_len = 3100.0 * (1.0 / (1.0 + toa_param/35.0)) * (0.55 + 0.45 * (m_mhz/safe_p_muf)) * ref_f
+        
+        res_total = 0.45 + 3.4 * (np.power(np.cos(math.pi * (dist_km / h_len)), 6.0) + 0.55 * np.power(np.cos(math.pi * (dist_km / (h_len * 1.35))), 4.0))
+        
+        # ele_angle = np.arctan(900.0 / (np.maximum(20.0, h_len) / 2.0))
+        # Optimized: 
+        ele_angle = np.arctan(1800.0 / np.maximum(20.0, h_len))
+        
+        reflection_eff = np.power(np.cos(math.pi/2.0 - ele_angle), 0.3)
+        abs_p = np.exp(-5.0 * terminator_h * zenith_layer * (10.0 / m_mhz)**2.2)
+        
+        path_loss_factor = 1.0 / (1.0 + 0.000065 * dist_km * (1.0 / np.maximum(0.2, combo_f)))
+        
+        exponent = -25.0 * ((p_muf / m_mhz) * res_total * abs_p * reflection_eff * path_loss_factor * pca_loss - 0.70)
+        exponent = np.clip(exponent, -50, 50) 
+        p_rel = 1.0 / (1.0 + np.exp(exponent))
         sum_rel += p_rel * sample_weights[i]
-        
-    return sum_muf, sum_rel
+
+    return sum_muf, sum_rel, dist_km
 
 def generate_voacap_response(query, map_type="REL"):
     try:
-        # Get requested dimensions, default to 660x330 if not specified
+        t_start = time.time()
+        
         target_w = int(query.get('WIDTH', [660])[0])
         target_h = int(query.get('HEIGHT', [330])[0])
         
@@ -307,129 +320,99 @@ def generate_voacap_response(query, map_type="REL"):
         is_muf = (m_mhz == 0) or (map_type == "MUF")
         is_toa = (map_type == "TOA")
         
-        cache_key = f"{tx_lat_d:.2f}_{tx_lng_d:.2f}_{m_mhz:.2f}_{toa_param:.2f}_{year}_{month}_{utc}_{map_type}_{target_w}_{target_h}"
-        if cache_key in VOACAP_MAP_CACHE:
-            logger.debug(f"Serving VOACAP map from cache for {cache_key}")
-            return VOACAP_MAP_CACHE[cache_key]
-
         ssn = get_ssn()
         tx_lat_rad = math.radians(tx_lat_d)
         tx_lng_rad = math.radians(tx_lng_d)
-        cos_tx_lat = math.cos(tx_lat_rad)
-        sin_tx_lat = math.sin(tx_lat_rad)
         
         s_dec_rad, s_lng_rad = get_solar_pos(year, month, 15, utc)
-        cos_s_dec = math.cos(s_dec_rad)
-        sin_s_dec = math.sin(s_dec_rad)
         
         muf_base = 5.0 + 0.1 * ssn
-        pole_lat = math.radians(80.5)
-        pole_lng = math.radians(-72.5)
-
-        # Internal calculation dimensions (fixed for performance and base map compatibility)
-        calc_w = 660
-        calc_h = 330
         
         results = []
         header = create_bmp_565_header(target_w, target_h)
         
-        # Precompute solar terms for calc resolution
-        calc_cos_rlng_s_lng = [math.cos(rlng - s_lng_rad) for rlng in RX_LNG_RADS]
-        cos_z_tx = sin_tx_lat * sin_s_dec + cos_tx_lat * cos_s_dec * math.cos(tx_lng_rad - s_lng_rad)
-        g_duct_pre = 0.85
+        grid_muf, grid_rel, grid_dist_km = calculate_grid_propagation_vectorized(
+            tx_lat_rad, tx_lng_rad, m_mhz, toa_param, 
+            s_dec_rad, s_lng_rad, muf_base, path=path
+        )
+        
+        val_grid = grid_muf if is_muf else grid_rel
+        
+        val_padded = np.pad(val_grid, ((1,1),(0,0)), mode='edge')
+        val_c = val_grid
+        val_l = np.roll(val_grid, 1, axis=1) 
+        val_r = np.roll(val_grid, -1, axis=1)
+        val_t = val_padded[:-2, :]
+        val_b = val_padded[2:, :]
+        
+        smooth_val = (val_c * 4.0 + val_l + val_r + val_t + val_b) / 8.0
+        
+        y_idx, x_idx = np.indices((MAP_H, MAP_W))
+        grain = (((x_idx * 13) ^ (y_idx * 17)) & 7) / 100.0 - 0.035
+        
+        if is_muf:
+             val_g = np.clip(smooth_val + grain * 5.0, 0.0, 50.0)
+             indices = (val_g * 10).astype(int)
+             indices = np.clip(indices, 0, 500)
+             c565_grid = MUF_CACHE[indices]
+             p_str = np.clip(val_g / 35.0, 0.0, 1.0)
+        else:
+             val_g = np.clip(smooth_val + grain, 0.0, 1.0)
+             
+             s_rx_dec = SIN_RX_LATS_GRID * math.sin(s_dec_rad)
+             c_rx_dec = COS_RX_LATS_GRID * math.cos(s_dec_rad)
+             calc_cos_rlng_s_lng = np.cos(RX_LNG_RADS_GRID - s_lng_rad)
+             cos_z_rx = s_rx_dec + c_rx_dec * calc_cos_rlng_s_lng
+             
+             cos_tx_lat = math.cos(tx_lat_rad)
+             sin_tx_lat = math.sin(tx_lat_rad)
+             cos_s_dec = math.cos(s_dec_rad)
+             sin_s_dec = math.sin(s_dec_rad)
+             
+             cos_z_tx = sin_tx_lat * sin_s_dec + cos_tx_lat * cos_s_dec * math.cos(tx_lng_rad - s_lng_rad)
+
+             g_duct = 0.85 * np.exp(-np.square(np.minimum(np.abs(cos_z_tx), np.abs(cos_z_rx)) / 0.07))
+             rel_v = np.round(val_g * 10.0 * (1.0 + g_duct)) * 10.0
+             
+             if is_toa:
+                 indices = np.clip((2.0 + (grid_dist_km/1000.0)*8.0) * 10, 0, 400).astype(int)
+                 c565_toa = TOA_CACHE[indices]
+                 c565_void = TOA_CACHE[400]
+                 c565_grid = np.where(rel_v > 20.0, c565_toa, c565_void)
+             else:
+                 indices = np.clip(rel_v * 10, 0, 1000).astype(int)
+                 c565_grid = REL_CACHE[indices]
+            
+             p_str = val_g
 
         for is_alternate in [False, True]:
-            # Step 1: Calculate raw propagation values at 660x330
-            val_buffer = [0.0] * (calc_w * calc_h)
-            for y in range(calc_h):
-                rlat_rad = RX_LAT_RADS[y]
-                for x in range(calc_w):
-                    rlng_rad = RX_LNG_RADS[x]
-                    p_muf, p_rel = calculate_point_propagation_core(
-                        tx_lat_rad, tx_lng_rad, rlat_rad, rlng_rad,
-                        m_mhz, toa_param, s_dec_rad, s_lng_rad,
-                        cos_tx_lat, sin_tx_lat, cos_s_dec, sin_s_dec,
-                        muf_base, pole_lat, pole_lng, path=path
-                    )
-                    val_buffer[y * calc_w + x] = p_muf if is_muf else p_rel
-
-            # Step 2: Smooth and convert to 16-bit colors at 660x330
-            calc_colors = [0] * (calc_w * calc_h)
-            for y in range(calc_h):
-                s_rx_dec = SIN_RX_LATS[y] * sin_s_dec
-                c_rx_dec = COS_RX_LATS[y] * cos_s_dec
-                
-                for x in range(calc_w):
-                    idx = y * calc_w + x
-                    # Simple 5-point smooth
-                    idx_l = y * calc_w + (x - 1) % calc_w
-                    idx_r = y * calc_w + (x + 1) % calc_w
-                    idx_t = (y - 1) * calc_w + x if y > 0 else idx
-                    idx_b = (y + 1) * calc_w + x if y < calc_h - 1 else idx
-                    val = (val_buffer[idx]*4.0 + val_buffer[idx_l] + val_buffer[idx_r] + val_buffer[idx_t] + val_buffer[idx_b]) / 8.0
-                    
-                    grain = (((x * 13) ^ (y * 17)) & 7) / 100.0 - 0.035
-                    val_g = max(0.0, min(1.0 if not is_muf else 50.0, val + (grain if not is_muf else grain*5.0)))
-                    
-                    if is_muf:
-                        c565 = MUF_CACHE[min(500, max(0, int(val_g * 10)))]
-                    else:
-                        cos_z_rx = s_rx_dec + c_rx_dec * calc_cos_rlng_s_lng[x]
-                        g_duct = g_duct_pre * math.exp(-(min(abs(cos_z_tx), abs(cos_z_rx)) / 0.07)**2)
-                        rel_v = round(val_g * 10.0 * (1.0 + g_duct)) * 10.0
-                        
-                        if is_toa:
-                            if rel_v > 20.0:
-                                rlng_rad = RX_LNG_RADS[x]
-                                rlat_rad = RX_LAT_RADS[y]
-                                dist_km = math.acos(max(-1.0, min(1.0, sin_tx_lat * SIN_RX_LATS[y] + cos_tx_lat * COS_RX_LATS[y] * math.cos(rlng_rad - tx_lng_rad)))) * 6371.0
-                                c565 = TOA_CACHE[min(400, max(0, int((2.0 + (dist_km/1000.0)*8.0) * 10)))]
-                            else: c565 = TOA_CACHE[400]
-                        else:
-                            c565 = REL_CACHE[min(1000, max(0, int(rel_v * 10)))]
-
-                    if is_alternate:
-                        r, g, b = (c565 >> 11) & 0x1F, (c565 >> 5) & 0x3F, c565 & 0x1F
-                        c565 = ((r >> 1) << 11) | ((g >> 1) << 5) | (b >> 1)
-                    
-                    # Blend with background map if available
-                    bg_map = COUNTRIES_MAP if COUNTRIES_MAP is not None else TERRAIN_MAP
-                    if bg_map is not None:
-                        bg_c565 = bg_map[idx]
-                        # Use variable alpha based on propagation strength
-                        # For REL (0..1), val_g is strength. For MUF (0..50), normalize.
-                        p_str = val_g if not is_muf else min(1.0, val_g / 35.0)
-                        alpha = 0.4 + 0.4 * p_str  # Range 0.4 to 0.8
-                        c565 = blend_rgb565(c565, bg_c565, alpha)
-
-                    # Overlay country outlines (Black pixels from mask)
-                    if COUNTRIES_MASK is not None and COUNTRIES_MASK[idx]:
-                        c565 = 0x0000
-                        
-                    calc_colors[idx] = c565
-
-            # Step 3: Upscale calc_colors to target resolution
-            pixel_data = bytearray(target_w * target_h * 2)
-            for ty in range(target_h):
-                cy = (ty * calc_h) // target_h
-                row_off = ty * target_w * 2
-                calc_row_off = cy * calc_w
-                for tx in range(target_w):
-                    cx = (tx * calc_w) // target_w
-                    c565 = calc_colors[calc_row_off + cx]
-                    pixel_data[row_off + tx*2] = c565 & 0xFF
-                    pixel_data[row_off + tx*2 + 1] = (c565 >> 8) & 0xFF
+            if is_alternate:
+                r = (c565_grid >> 11) & 0x1F
+                g = (c565_grid >> 5) & 0x3F
+                b = c565_grid & 0x1F
+                final_grid = ((r >> 1) << 11) | ((g >> 1) << 5) | (b >> 1)
+            else:
+                final_grid = c565_grid.copy()
             
+            bg_map = COUNTRIES_MAP if COUNTRIES_MAP is not None else TERRAIN_MAP
+            if bg_map is not None:
+                alpha = 0.4 + 0.4 * p_str
+                final_grid = blend_rgb565_vectorized(final_grid, bg_map, alpha)
+            
+            if COUNTRIES_MASK is not None:
+                final_grid[COUNTRIES_MASK > 0] = 0x0000
+
+            if target_w != MAP_W or target_h != MAP_H:
+                 row_ind = (np.arange(target_h) * MAP_H // target_h).astype(int)
+                 col_ind = (np.arange(target_w) * MAP_W // target_w).astype(int)
+                 final_grid = final_grid[row_ind[:, None], col_ind]
+
+            pixel_data = final_grid.astype('<u2').tobytes()
             results.append(zlib.compress(header + pixel_data))
-        
-        if len(VOACAP_MAP_CACHE) >= MAX_CACHE_SIZE: VOACAP_MAP_CACHE.clear()
-        VOACAP_MAP_CACHE[cache_key] = results
+            
+        logger.info(f"VOACAP generation took {time.time()-t_start:.3f}s")
         return results
+
     except Exception as e:
         logger.error(f"Error in VOACAP service: {e}", exc_info=True)
         return None
-
-if __name__ == "__main__":
-    t0 = time.time()
-    res = generate_voacap_response({})
-    if res: print(f"Done, {len(res)} maps in {time.time()-t0:.2f}s")
