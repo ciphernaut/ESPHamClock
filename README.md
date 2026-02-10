@@ -2,6 +2,11 @@
 
 Welcome to the ESPHamClock Reconstruction Beta! This repository provides a local backend replacement for HamClock data services.
 
+This project aims to provide a full featured replacement to work with the existing client with minimal changes.
+
+
+
+
 ## Quick Start (Verification Stack)
 
 This environment runs two HamClock instances for live parity verification:
@@ -37,3 +42,7 @@ Check `logs/parity_summary.json` or the dashboard. If you see persistent "Diff" 
 - `shadow_proxy/`: The intelligent monitoring layer.
 - `ingestion/`: Background fetchers that keep data fresh.
 - `logs/`: Diagnostic output for community debugging.
+
+## Resources
+- https://github.com/accius/openhamclock VOACAP calculations inspired
+- https://github.com/BrianWilkinsFL/open-hamclock-backend 
