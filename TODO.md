@@ -19,5 +19,5 @@
 - [x] **Investigate**: Repair 0% parity for `/ham/HamClock/solar-wind/swind-24hr.txt` (Formatting Fixed).
 
 ## Next Steps
-3. Address world weather parity issues (prevailing stats via `wttr.in`).
-4. Improve SDO image scaling/quality for better parity.
+- [x] Address world weather parity issues (prevailing stats via `wttr.in`).
+- [x] Improve SDO image scaling/quality for better parity.

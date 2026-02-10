@@ -16,18 +16,18 @@ if not os.path.exists(CACHE_DIR):
 
 # Mapping from HamClock filename patterns to SDO wavelengths
 SDO_MAP = {
-    "171": "latest_1024_0171.jpg",
-    "193": "latest_1024_0193.jpg",
-    "211": "latest_1024_0211.jpg",
-    "304": "latest_1024_0304.jpg",
-    "131": "latest_1024_0131.jpg",
-    "1600": "latest_1024_1600.jpg",
-    "1700": "latest_1024_1700.jpg",
-    "170": "latest_1024_0171.jpg", # Fallback for 170
-    "HMIB": "latest_1024_HMIB.jpg",
-    "HMIIC": "latest_1024_HMIIC.jpg",
-    "HMI": "latest_1024_HMIIC.jpg", # Map generic HMI to Intensity Continuum
-    "211193171": "latest_1024_211193171.jpg",
+    "171": "latest_2048_0171.jpg",
+    "193": "latest_2048_0193.jpg",
+    "211": "latest_2048_0211.jpg",
+    "304": "latest_2048_0304.jpg",
+    "131": "latest_2048_0131.jpg",
+    "1600": "latest_2048_1600.jpg",
+    "1700": "latest_2048_1700.jpg",
+    "170": "latest_2048_0171.jpg", # Fallback for 170
+    "HMIB": "latest_1024_HMIB.jpg",  # HMIB only available in 1024 or 4096
+    "HMIIC": "latest_2048_HMIIC.jpg",
+    "HMI": "latest_2048_HMIIC.jpg", # Map generic HMI to Intensity Continuum
+    "211193171": "latest_2048_211193171.jpg",
 }
 
 def get_sdo_image(path):
@@ -58,7 +58,7 @@ def get_sdo_image(path):
     elif "1600" in filename: wavelength = "1600"
     elif "1700" in filename: wavelength = "1700"
 
-    sdo_filename = SDO_MAP.get(wavelength, "latest_1024_0171.jpg")
+    sdo_filename = SDO_MAP.get(wavelength, "latest_2048_0171.jpg")
     cache_id = f"{wavelength}_{resolution}"
     cache_path = os.path.join(CACHE_DIR, f"{cache_id}.bmp.z")
 
@@ -88,9 +88,11 @@ def get_sdo_image(path):
         # Resize to requested resolution and convert to BMP 24bpp (truecolor)
         # Force BMP3 to ensure compatibility with HamClock's bmp.cpp
         # Use -strip to remove metadata/profiles
+        # Filter Lanczos or Mitchell? Mitchell is default for downsampling in some contexts, but Lanczos is sharper.
+        # HamClock original appears to be quite sharp, so Lanczos is a good choice.
         res_str = f"{resolution}x{resolution}!"
         try:
-            subprocess.run(["magick", temp_jpg, "-strip", "-colorspace", "sRGB", "-filter", "Mitchell", "-resize", res_str, "-type", "truecolor", f"BMP3:{temp_bmp}"], 
+            subprocess.run(["magick", temp_jpg, "-strip", "-colorspace", "sRGB", "-filter", "Lanczos", "-resize", res_str, "-type", "truecolor", f"BMP3:{temp_bmp}"], 
                            check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as e:
             logger.error(f"Magick failed: {e.stderr}")
