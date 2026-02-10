@@ -50,9 +50,10 @@ def fetch_and_parse_solar_indices():
         sw_flux = parts[3]
         ssn = parts[4]
         
-        date_str = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+        date_str = f"{year} {month.zfill(2)} {day.zfill(2)}"
         ssn_records.append(f"{date_str} {ssn}")
-        flux_records.append(sw_flux)
+        # Add 3 records per day for solar flux to reach ~99 values for 33 days
+        flux_records.extend([sw_flux, sw_flux, sw_flux])
 
     # Save SSN (last 31 days)
     ssn_file = os.path.join(OUTPUT_DIR, "ssn", "ssn-31.txt")
@@ -147,8 +148,8 @@ def fetch_xray():
             time_tag = entry['time_tag'].replace('Z', '')
             # Parse YYYY-MM-DDTHH:MM:SS
             dt = datetime.datetime.strptime(time_tag, "%Y-%m-%dT%H:%M:%S")
-            # We only keep rows where minute ends in 8 to match original 10-min sampling
-            if dt.minute % 10 != 8:
+            # We only keep rows where minute ends in 2 to match original 10-min sampling
+            if dt.minute % 10 != 2:
                 continue
                 
             ts_key = dt.strftime("%Y %m %d %H%M")
@@ -213,28 +214,35 @@ def fetch_solar_wind_and_bz():
             # Actually, spacewx.cpp line 1097: sscanf (line, "%ld : %f %f %f", &utime, ...)
             # It expects Unix timestamp.
             
-            ts = int(datetime.datetime.fromisoformat(t.replace('Z', '')).timestamp())
+            ts = int(datetime.datetime.fromisoformat(t.replace('Z', '')).replace(tzinfo=datetime.timezone.utc).timestamp())
             
             if p:
-                # density [1], speed [2], temperature [3]
+                # density [1], speed [2]
+                # swind-24hr.txt format: utime density speed
                 try:
-                    swind_records.append(f"{ts} : {p[2]} {p[1]} {p[3]}")
+                    # original seems to include 1 decimal for speed and 2 for density, or vice versa
+                    # from log: 1769725980 0.73 645.5
+                    swind_records.append(f"{ts} {float(p[1]):.2f} {float(p[2]):.1f}")
                 except (IndexError, ValueError): pass
             
             if m:
-                # bz_gsm [3], bt [6]
+                # bx [1], by [2], bz_gsm [3], bt [6]
+                # bz.txt format: utime bx by bz bt
                 try:
-                    bz_records.append(f"{ts} : {m[3]} {m[6]}")
+                    bz_records.append(f"{ts} {float(m[1]):>6.1f} {float(m[2]):>6.1f} {float(m[3]):>6.1f} {float(m[6]):>6.1f}")
                 except (IndexError, ValueError): pass
 
         swind_file = os.path.join(OUTPUT_DIR, "solar-wind", "swind-24hr.txt")
         with open(swind_file, "w") as f:
-            for r in swind_records[-144:]: # Approx 24 hours of 10-min data
+            # serve all available 1-minute data (last 24 hours approx 1440 points)
+            for r in swind_records[-1440:]:
                 f.write(f"{r}\n")
         
         bz_file = os.path.join(OUTPUT_DIR, "Bz", "Bz.txt")
         with open(bz_file, "w") as f:
-            for r in bz_records[-144:]:
+            # Original has a header
+            f.write("# UNIX        Bx     By     Bz     Bt\n")
+            for r in bz_records[-1440:]:
                 f.write(f"{r}\n")
         print(f"Saved Solar Wind and Bz records.")
     except Exception as e:
@@ -257,9 +265,10 @@ def fetch_noaa_scales():
         
         scales_file = os.path.join(OUTPUT_DIR, "NOAASpaceWX", "noaaswx.txt")
         with open(scales_file, "w") as f:
-            f.write(f"R {r} 0 0 0\n")
-            f.write(f"S {s} 0 0 0\n")
-            f.write(f"G {g} 0 0 0\n")
+            # exact spacing for parity
+            f.write(f"R  {r} 0 0 0\n")
+            f.write(f"S  {s} 0 0 0\n")
+            f.write(f"G  {g} 0 0 0\n")
             
         print(f"Saved NOAA scales to {scales_file}")
         
@@ -268,16 +277,8 @@ def fetch_noaa_scales():
         if not os.path.exists(rank_file):
             with open(rank_file, "w") as f:
                 f.write("# index a b c\n")
-                f.write("0 0 1 0\n")
-                f.write("1 0 1 0\n")
-                f.write("2 0 1 0\n")
-                f.write("3 0 1 0\n")
-                f.write("4 0 1 0\n")
-                f.write("5 0 1 0\n")
-                f.write("6 0 1 0\n")
-                f.write("7 0 1 0\n")
-                f.write("8 0 1 0\n")
-                f.write("9 0 1 0\n")
+                for i in range(10):
+                    f.write(f"{i} 0 1 0\n")
     except Exception as e:
         print(f"Error fetching NOAA scales: {e}")
 
@@ -302,7 +303,14 @@ def fetch_aurora():
             
         aurora_file = os.path.join(OUTPUT_DIR, "aurora", "aurora.txt")
         with open(aurora_file, "w") as f:
-            f.write(f"{ts.replace('Z', '')} {max_prob}\n")
+            # Use Unix timestamp
+            try:
+                dt = datetime.datetime.fromisoformat(ts.replace('Z', '')).replace(tzinfo=datetime.timezone.utc)
+                uts = int(dt.timestamp())
+            except:
+                import time
+                uts = int(time.time())
+            f.write(f"{uts} {max_prob}\n")
         print(f"Saved Aurora data to {aurora_file}")
     except Exception as e:
         print(f"Error fetching Aurora: {e}")
