@@ -132,11 +132,15 @@ start_client() {
 setup_clients() {
     echo "Performing initial setup for clients via REST API..."
     # Client 1: VK4SHF
-    echo "Setting up $CLIENT1_NAME on port $CLIENT1_REST..."
-    curl -s "http://localhost:$CLIENT1_REST/set_newde?call=$CLIENT1_NAME" > /dev/null
+    echo "Setting up $CLIENT1_NAME (VK4SHF) on port $CLIENT1_REST..."
+    curl -s "http://localhost:$CLIENT1_REST/set_newde?call=VK4SHF" > /dev/null
+    curl -s "http://localhost:$CLIENT1_REST/set_newde?grid=QG63" > /dev/null
+    curl -s "http://localhost:$CLIENT1_REST/set_newdx?grid=NJ07" > /dev/null
     # Client 2: VK4SGE
-    echo "Setting up $CLIENT2_NAME on port $CLIENT2_REST..."
-    curl -s "http://localhost:$CLIENT2_REST/set_newde?call=$CLIENT2_NAME" > /dev/null
+    echo "Setting up $CLIENT2_NAME (VK4SGE) on port $CLIENT2_REST..."
+    curl -s "http://localhost:$CLIENT2_REST/set_newde?call=VK4SGE" > /dev/null
+    curl -s "http://localhost:$CLIENT2_REST/set_newde?grid=QG63" > /dev/null
+    curl -s "http://localhost:$CLIENT2_REST/set_newdx?grid=NJ07" > /dev/null
 }
 
 case "$COMMAND" in
