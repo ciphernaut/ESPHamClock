@@ -118,12 +118,14 @@ class ShadowProxy(http.server.SimpleHTTPRequestHandler):
         if PROXY_MODE == "SHADOW":
             # Serve local, but fallback to original if local failed (404/500/502)
             if local_status >= 400 or local_status == 0:
-                print(f"  [SHADOW] LOCAL failed ({local_status}), falling back to ORIGINAL")
+                print(f"  [SHADOW] SERVED ORIGINAL (Fallback): {self.path} (Local failed: {local_status})")
                 self.send_backend_response(orig_status, orig_headers, orig_data)
             else:
+                print(f"  [SHADOW] SERVED LOCAL: {self.path}")
                 self.send_backend_response(local_status, local_headers, local_data)
         elif PROXY_MODE == "VERIFY":
             # Serve original
+            print(f"  [VERIFY] SERVED ORIGINAL: {self.path}")
             self.send_backend_response(orig_status, orig_headers, orig_data)
 
     protocol_version = "HTTP/1.0"
