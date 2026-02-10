@@ -34,7 +34,11 @@ class ShadowProxy(http.server.SimpleHTTPRequestHandler):
             
             # Normalize path for grouping (remove query params)
             base_path = path.split('?')[0]
-            stats = summary.get(base_path, {"matches": 0, "total": 0})
+            
+            # Retrieve existing stats from nested structure or use defaults
+            entry = summary.get(base_path, {})
+            stats = entry.get("_stats", {"matches": 0, "total": 0})
+            
             stats["total"] += 1
             if match: stats["matches"] += 1
             
@@ -42,10 +46,9 @@ class ShadowProxy(http.server.SimpleHTTPRequestHandler):
             summary[base_path] = {
                 "status": "Match" if match else "Diff",
                 "parity": f"{stats['matches']}/{stats['total']}",
-                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "_stats": stats
             }
-            # Also keep raw stats for internal use
-            summary[base_path]["_stats"] = stats
             
             with open(PARITY_SUMMARY, "w") as f:
                 json.dump(summary, f, indent=4)

@@ -70,12 +70,16 @@ def format_for_hamclock(data, lat, lng):
         wind_dir = current.get('winddir16Point', 'N')
         desc = current.get('weatherDesc', [{'value': 'Clear'}])[0]['value']
         
-        # Attribution for wttr.in
-        attribution = "wttr.in"
+        # Attribution for HamClock - original uses openweathermap.org
+        attribution = "openweathermap.org"
         
-        # Timezone offset in seconds (wttr.in doesn't give this directly in j1 usually, 
-        # but we can try to find it or use a default)
-        timezone = 0 
+        # Timezone offset in seconds
+        # wttr.in doesn't give this directly. Estimate based on longitude:
+        # 3600 seconds per 15 degrees.
+        try:
+            timezone = int(float(lng) / 15.0 * 3600)
+        except:
+            timezone = 0 
         
         output = [
             f"city={city}",
