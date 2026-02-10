@@ -192,42 +192,65 @@ def generate_voacap_response(query):
                         s_ang = math.acos(max(-1.0, min(1.0, cos_z_s)))
                         s_proj = math.asin(min(1.0, (6371.0 / 6721.0) * math.sin(s_ang)))
                         cos_z_p = math.cos(s_proj)
-                        
-                        # --- Iteration 14: Layered Atmospheric Resonance (F2/D Decoupling) ---
-                        # De-coupled MUF (F2) and Absorption (D) with frequency transparency.
                         # Transparency factor (penetration into upper layers)
                         f_trans = 1.0 / (1.0 + math.pow(m_mhz / 35.0, 2.0))
                         
+                        # --- Iteration 16: Explicit Solar Layers ---
+                        # 1. Solar Terminator Layer (Sharpness check)
+                        # Sharp transition factor at cos_z = 0
+                        terminator_layer = 1.0 / (1.0 + math.exp(-20.0 * (cos_z_s + 0.05)))
+                        
+                        # 2. Solar Zenith Layer (Intensity Gradient)
+                        # F2 height projected zenith intensity
+                        zenith_layer = math.pow(max(0, cos_z_p + 0.1), 0.75)
+                        
+                        # 3. Solar Azimuth Alignment Layer (Corridor Direction)
+                        # Alignment between path azimuth and solar vector azimuth
+                        # rel_az was computed above in Iteration 13
+                        azimuth_layer = math.pow(math.cos(rel_az), 2.0)
+                        
                         is_polar = (s_dec_rad < -0.1 and slat < -0.8) or (s_dec_rad > 0.1 and slat > 0.8)
                         
-                        # F2 Layer Influence (Reflection)
-                        m_sun_f2 = (0.5 + 0.5 * math.pow(max(0, cos_z_p + 0.1), 0.7)) if cos_z_s > -0.1 else (0.4 * math.cos(slat-s_dec_rad) if is_polar else 0.4*math.exp((cos_z_s+0.1)*6))
+                        # Decoupled Layers for MUF
+                        # reflection_factor depends on zenith and azimuth
+                        reflection_factor = (0.4 + 0.6 * zenith_layer) * (0.8 + 0.2 * azimuth_layer)
                         
-                        # D Layer Influence (Absorption)
-                        # D-layer is much more sensitive to SZA and disappears quickly at night.
-                        m_sun_d = math.pow(max(0, cos_z_s), 1.2) if cos_z_s > 0 else 0.0
+                        # Night-side/Polar summer scaling
+                        if cos_z_s <= -0.1:
+                            floor = 0.4 * math.cos(slat - s_dec_rad) if is_polar else 0.0
+                            reflection_factor = floor + (reflection_factor - floor) * math.exp((cos_z_s + 0.1) * 8.0)
                         
-                        # Refraction modulated by combined Azimuthal Factors
-                        ref_f = 1.0 + (dist_km / 1000.0) * (1.0 - cos_z_p) * 0.04 * combo_f * f_trans
+                        # Refraction modulated by azimuth alignment and transparency
+                        ref_f = 1.0 + (dist_km / 1000.0) * (1.0 - cos_z_p) * 0.045 * combo_f * f_trans * (1.1 - 0.1 * azimuth_layer)
                         
                         s_mag = sslat * math.sin(pole_lat) + cslat * math.cos(pole_lat) * math.cos(slng - pole_lng)
                         m_lat_r = math.asin(max(-1.0, min(1.0, s_mag)))
                         m_lat_d = math.degrees(m_lat_r)
-                        m_bend = 0.85 + 0.5 * (math.cos(m_lat_r)**2) + 0.85 * (math.exp(-((m_lat_d - 15.5)/7.5)**2) + math.exp(-((m_lat_d + 15.5)/7.5)**2))
+                        m_bend = 0.85 + 0.55 * (math.cos(m_lat_r)**2) + 0.9 * (math.exp(-((m_lat_d - 15.5)/7.5)**2) + math.exp(-((m_lat_d + 15.5)/7.5)**2))
                         
-                        p_muf = muf_base * (m_sun_f2 * m_bend)
+                        p_muf = muf_base * reflection_factor * m_bend
                         
                         if is_muf:
                             sum_rel += p_muf * sample_weights[i]
                         else:
-                            # Higher frequency -> longer skip/less bending
+                            # --- Iteration 18 (Tuned): Ray-Incidence & Refraction Summation ---
+                            # 1. Terminator & Skip Distance
+                            terminator_h = 1.0 / (1.0 + math.exp(-35.0 * (cos_z_s + 0.04)))
                             h_len = 3100.0 * (1.0 / (1.0 + toa_param/35.0)) * (0.55 + 0.45 * (m_mhz/max(0.5, p_muf))) * ref_f
-                            res = 0.35 + 2.8 * math.pow(math.cos(math.pi * (dist_km / h_len)), 6.0)
                             
-                            # Absorption (D-layer dominated)
-                            abs_p = math.exp(-3.5 * m_sun_d * (9.0 / m_mhz)**2.2)
+                            # 2. Harmonic Echoes (Dual-Ring Resonance)
+                            res_total = 0.3 + 3.2 * (math.pow(math.cos(math.pi * (dist_km / h_len)), 6.0) + 0.45 * math.pow(math.cos(math.pi * (dist_km / (h_len * 1.35))), 4.0))
                             
-                            p_rel = 1.0 / (1.0 + math.exp(-15.0 * ((p_muf / m_mhz) * res * abs_p - 0.68)))
+                            # 3. Angle of Incidence (phi) - Brewster-like corridor peak
+                            ele_angle = math.atan(900.0 / (max(20.0, h_len) / 2.0))
+                            reflection_eff = math.pow(math.cos(math.pi/2.0 - ele_angle), 0.25)
+                            
+                            # 4. Integrated Path Refraction (Relaxed)
+                            path_loss_factor = 1.0 / (1.0 + 0.00004 * dist_km * (1.0 / max(0.2, combo_f)))
+                            
+                            # 5. Final p_rel
+                            abs_p = math.exp(-3.5 * terminator_h * zenith_layer * (10.0 / m_mhz)**2.2)
+                            p_rel = 1.0 / (1.0 + math.exp(-18.0 * ((p_muf / m_mhz) * res_total * abs_p * reflection_eff * path_loss_factor - 0.58)))
                             sum_rel += p_rel * sample_weights[i]
                             
                     val_buffer[y * MAP_W + x] = sum_rel
