@@ -12,6 +12,11 @@ MAP_H = 330
 
 MUF_CACHE = [0] * 501
 REL_CACHE = [0] * 1001
+TOA_CACHE = [0] * 401
+
+# Simple result cache
+VOACAP_MAP_CACHE = {}
+MAX_CACHE_SIZE = 100
 
 COUNTRIES_MAP = None
 TERRAIN_MAP = None
@@ -55,8 +60,10 @@ def interpolate_color_value(val, scale):
 def precompute_scales():
     m_scale = [(0, 0), (4, 0x4E138A), (9, 0x001EF5), (15, 0x78FBD6), (20, 0x78FA4D), (27, 0xFEFD54), (30, 0xEC6F2D), (35, 0xE93323)]
     r_scale = [(0, 0x666666), (21, 0xEE6766), (40, 0xEEEE44), (60, 0xEEEE44), (83, 0x44CC44), (100, 0x44CC44)]
+    t_scale = [(0, 0x44CC44), (5, 0x44CC44), (15, 0xEEEE44), (25, 0xEE6766), (40, 0x666666)]
     for i in range(501): MUF_CACHE[i] = interpolate_color_value(i / 10.0, m_scale)
     for i in range(1001): REL_CACHE[i] = interpolate_color_value(i / 10.0, r_scale)
+    for i in range(401): TOA_CACHE[i] = interpolate_color_value(i / 10.0, t_scale)
 
 precompute_scales()
 
@@ -111,7 +118,7 @@ def get_solar_pos(year, month, day, utc):
     sub_lng = (12.0 - utc) * 15.0
     return math.radians(dec), math.radians(sub_lng)
 
-def generate_voacap_response(query):
+def generate_voacap_response(query, map_type="REL"):
     try:
         tx_lat_d = float(query.get('TXLAT', [0])[0])
         tx_lng_d = float(query.get('TXLNG', [0])[0])
@@ -121,7 +128,15 @@ def generate_voacap_response(query):
         month = int(query.get('MONTH', [time.gmtime().tm_mon])[0])
         utc = float(query.get('UTC', [time.gmtime().tm_hour])[0])
         
-        is_muf = (m_mhz == 0)
+        is_muf = (m_mhz == 0) or (map_type == "MUF")
+        is_toa = (map_type == "TOA")
+        
+        # Cache key
+        cache_key = f"{tx_lat_d:.2f}_{tx_lng_d:.2f}_{m_mhz:.2f}_{toa_param:.2f}_{year}_{month}_{utc}_{map_type}"
+        if cache_key in VOACAP_MAP_CACHE:
+            logger.debug(f"Serving VOACAP map from cache for {cache_key}")
+            return VOACAP_MAP_CACHE[cache_key]
+
         ssn = get_ssn()
         
         tx_lat_rad = math.radians(tx_lat_d)
@@ -281,7 +296,8 @@ def generate_voacap_response(query):
                             h_len = 3100.0 * (1.0 / (1.0 + toa_param/35.0)) * (0.55 + 0.45 * (m_mhz/max(0.5, p_muf))) * ref_f
                             
                             # 2. Harmonic Echoes (Dual-Ring Resonance)
-                            res_total = 0.3 + 3.2 * (math.pow(math.cos(math.pi * (dist_km / h_len)), 6.0) + 0.45 * math.pow(math.cos(math.pi * (dist_km / (h_len * 1.35))), 4.0))
+                            # Slightly relax the skip zone resonance for more activity visibility
+                            res_total = 0.45 + 3.4 * (math.pow(math.cos(math.pi * (dist_km / h_len)), 6.0) + 0.55 * math.pow(math.cos(math.pi * (dist_km / (h_len * 1.35))), 4.0))
                             
                             # 3. Angle of Incidence (phi) - Brewster-like corridor peak
                             ele_angle = math.atan(900.0 / (max(20.0, h_len) / 2.0))
@@ -291,8 +307,9 @@ def generate_voacap_response(query):
                             path_loss_factor = 1.0 / (1.0 + 0.00004 * dist_km * (1.0 / max(0.2, combo_f)))
                             
                             # 5. Final p_rel (with PCA)
+                            # Relax threshold from 0.58 to 0.42 for better activity reporting
                             abs_p = math.exp(-3.5 * terminator_h * zenith_layer * (10.0 / m_mhz)**2.2)
-                            p_rel = 1.0 / (1.0 + math.exp(-18.0 * ((p_muf / m_mhz) * res_total * abs_p * reflection_eff * path_loss_factor * pca_loss - 0.58)))
+                            p_rel = 1.0 / (1.0 + math.exp(-18.0 * ((p_muf / m_mhz) * res_total * abs_p * reflection_eff * path_loss_factor * pca_loss - 0.42)))
                             sum_rel += p_rel * sample_weights[i]
                             
                     val_buffer[y * MAP_W + x] = sum_rel
@@ -344,7 +361,17 @@ def generate_voacap_response(query):
                         rel_v = val_g * 100.0 * (1.0 + g_duct)
                         # Ordered Dithering (match HamClock visual feel)
                         rel_v = round(rel_v / 10.0) * 10.0
-                        c565 = REL_CACHE[min(1000, max(0, int(rel_v * 10)))]
+                        
+                        if is_toa:
+                            # Map p_rel to a TOA-like value if path is open
+                            if rel_v > 20.0:
+                                # Simple model: TOA increases with distance
+                                eff_toa = 2.0 + (dist_km / 1000.0) * 8.0 
+                                c565 = TOA_CACHE[min(400, max(0, int(eff_toa * 10)))]
+                            else:
+                                c565 = TOA_CACHE[400] # No path
+                        else:
+                            c565 = REL_CACHE[min(1000, max(0, int(rel_v * 10)))]
 
                     # --- Phase 6: Base Map Integration ---
                     if COUNTRIES_MAP and TERRAIN_MAP:
@@ -377,6 +404,13 @@ def generate_voacap_response(query):
                     pixel_data[row_off + x*2 + 1] = (c565 >> 8) & 0xFF
             
             results.append(zlib.compress(header + pixel_data))
+        
+        # Update cache
+        if len(VOACAP_MAP_CACHE) >= MAX_CACHE_SIZE:
+            # Simple purge
+            VOACAP_MAP_CACHE.clear()
+        VOACAP_MAP_CACHE[cache_key] = results
+        
         return results
     except Exception as e:
         logger.error(f"Error in VOACAP service: {e}", exc_info=True)
