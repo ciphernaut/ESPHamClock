@@ -9,12 +9,14 @@ import pytz
 
 logger = logging.getLogger(__name__)
 
-# Note: In a production environment, this should be moved to an environment variable.
-# For this task, we'll use a placeholder or the user can provide one.
-# However, many public APIs have a free tier that doesn't strictly require a personal key for low-volume testing,
-# or we can use a service like wttr.in which is simpler.
-# HamClock originally used OpenWeatherMap.
+# Global TimezoneFinder instance to avoid loading 20MB+ binary on every request/thread
+try:
+    _tf_instance = TimezoneFinder()
+except Exception as e:
+    logger.error(f"Failed to initialize TimezoneFinder: {e}")
+    _tf_instance = None
 
+# Note: In a production environment, this should be moved to an environment variable.
 BASE_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 WEATHER_DATA_DIR = os.path.join(BASE_DATA_DIR, "processed_data", "weather")
 
@@ -58,11 +60,7 @@ def fetch_weather(lat, lng):
             resp.raise_for_status()
             om_data = resp.json()
             
-            # Adapt Open-Meteo to wttr.in format (partial mapping needed for format_for_hamclock)
-            # format_for_hamclock expectations:
-            # data['current_condition'][0] -> temp_C, pressure, humidity, windspeedKmph, winddir16Point, weatherDesc[0]['value']
-            # data['nearest_area'][0] -> areaName[0]['value']
-            
+            # Adapt Open-Meteo to wttr.in format
             current = om_data.get('current', {})
             adapted = {
                 'current_condition': [{
@@ -106,6 +104,7 @@ def fetch_from_grid(lat, lng):
                     try:
                         p_lat = float(parts[0])
                         p_lng = float(parts[1])
+                        # Simple squared euclidean for speed
                         dist = (lat - p_lat)**2 + (lng - p_lng)**2
                         if dist < best_dist:
                             best_dist = dist
@@ -119,7 +118,6 @@ def fetch_from_grid(lat, lng):
                         continue
         
         if best_p:
-            # Map grid condition back to wttr.in-like structure (very simplified)
             adapted = {
                 'current_condition': [{
                     'temp_C': best_p['temp'],
@@ -144,7 +142,6 @@ def deg_to_dir(deg):
     return dirs[idx]
 
 def code_to_desc(code):
-    # Simplified WMO code mapping
     m = {0: "Clear", 1: "Mainly Clear", 2: "Partly Cloudy", 3: "Overcast", 45: "Fog", 48: "Fog",
          51: "Drizzle", 53: "Drizzle", 55: "Drizzle", 61: "Rain", 63: "Rain", 65: "Rain",
          71: "Snow", 73: "Snow", 75: "Snow", 80: "Rain Showers", 81: "Rain Showers", 82: "Rain Showers",
@@ -157,15 +154,6 @@ def get_prevailing_stats():
     Returns string format for HamClock.
     """
     try:
-        # For prevailing stats, HamClock originally might have aggregated its grid.
-        # But if the user wants "via wttr.in", we can try to get a global summary
-        # or just stick to the grid aggregation if that's what's meant by "parity".
-        # However, the TODO specifically says "prevailing stats via wttr.in".
-        # wttr.in doesn't have a single "global summary" endpoint.
-        # It's possible "prevailing stats" refers to a specific major city or an aggregate.
-        # Given the 0% parity in worldwx/wx.txt, let's first ensure we aggregate the grid correctly
-        # but also provide a way to hook into wttr.in if a specific summary is needed.
-        
         grid_file = os.path.join(BASE_DATA_DIR, "processed_data", "worldwx", "wx.txt")
         if not os.path.exists(grid_file):
             logger.warning(f"Grid file {grid_file} not found for prevailing stats")
@@ -194,13 +182,8 @@ def get_prevailing_stats():
         min_temp = min(temps)
         max_temp = max(temps)
         avg_temp = sum(temps) / len(temps)
-        
-        # Most frequent condition
         prevailing_cond = max(conditions, key=conditions.get) if conditions else "Clear"
         
-        # Format matching what HamClock might expect or common summary format
-        # Note: We need to verify if the client expects a specific label-value format.
-        # Based on the handle_word_wx handler, it's just raw text.
         return f"MinTemp: {min_temp:.1f}C\nMaxTemp: {max_temp:.1f}C\nAvgTemp: {avg_temp:.1f}C\nPrevailing: {prevailing_cond}"
     except Exception as e:
         logger.error(f"Error calculating prevailing stats: {e}")
@@ -217,8 +200,6 @@ def format_for_hamclock(data, lat, lng):
         current = data['current_condition'][0]
         nearest = data['nearest_area'][0]
         
-        # wttr.in returns strings, need to ensure numeric where expected
-        # USER REMINDER: Do not rely on clearskyinstitute.com. wttr.in provides nearest area name.
         city = nearest.get('areaName', [{'value': 'Unknown'}])[0]['value']
         temp_c = float(current.get('temp_C', '0'))
         pressure = current.get('pressure', '1013')
@@ -228,50 +209,34 @@ def format_for_hamclock(data, lat, lng):
         wind_dir = current.get('winddir16Point', 'N')
         raw_desc = current.get('weatherDesc', [{'value': 'Clear'}])[0]['value']
         
-        # CONDITION MAPPING: HamClock expects standard short labels
         condition_map = {
-            "Clear": "Clear",
-            "Sunny": "Sunny",
-            "Partly cloudy": "Partly Cloudy",
-            "Cloudy": "Cloudy",
-            "Overcast": "Overcast",
-            "Mist": "Mist",
-            "Fog": "Fog",
-            "Light rain": "Light Rain",
-            "Rain": "Rain",
-            "Patchy rain intermediate": "Rain",
-            "Heavy rain": "Heavy Rain",
-            "Light snow": "Light Snow",
-            "Snow": "Snow",
+            "Clear": "Clear", "Sunny": "Sunny", "Partly cloudy": "Partly Cloudy",
+            "Cloudy": "Cloudy", "Overcast": "Overcast", "Mist": "Mist", "Fog": "Fog",
+            "Light rain": "Light Rain", "Rain": "Rain", "Patchy rain intermediate": "Rain",
+            "Heavy rain": "Heavy Rain", "Light snow": "Light Snow", "Snow": "Snow",
             "Thundery outbreaks possible": "Thunder",
         }
         
-        # Simple normalization: capitalize first letter and look up
         desc = condition_map.get(raw_desc.capitalize(), raw_desc)
-        if "rain" in raw_desc.lower() and desc == raw_desc:
-            desc = "Rain"
-        elif "snow" in raw_desc.lower() and desc == raw_desc:
-            desc = "Snow"
-        elif "cloud" in raw_desc.lower() and desc == raw_desc:
-            desc = "Cloudy"
+        if "rain" in raw_desc.lower() and desc == raw_desc: desc = "Rain"
+        elif "snow" in raw_desc.lower() and desc == raw_desc: desc = "Snow"
+        elif "cloud" in raw_desc.lower() and desc == raw_desc: desc = "Cloudy"
         
-        # Attribution for HamClock - original uses openweathermap.org
         attribution = "wttr.in"
         
-        # Calculate timezone offset
+        # Calculate timezone offset using global instance
         try:
-            tf = TimezoneFinder()
-            tz_name = tf.timezone_at(lng=lng, lat=lat)
-            if not tz_name:
-                # Fallback for coastal points
-                tz_name = tf.closest_timezone_at(lng=lng, lat=lat)
+            if _tf_instance:
+                tz_name = _tf_instance.timezone_at(lng=lng, lat=lat)
+                if not tz_name:
+                    tz_name = _tf_instance.closest_timezone_at(lng=lng, lat=lat)
+            else:
+                tz_name = None
             
             if tz_name:
                 tz = pytz.timezone(tz_name)
-                # Get offset for current time (considering DST)
                 timezone = int(tz.utcoffset(datetime.now()).total_seconds())
             else:
-                # Fallback to longitude based approximation
                 timezone = int(round(float(lng) / 15.0) * 3600)
         except Exception as e:
             logger.warning(f"Error calculating timezone: {e}")
