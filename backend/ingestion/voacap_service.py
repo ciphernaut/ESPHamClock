@@ -4,6 +4,7 @@ import time
 import struct
 import zlib
 import logging
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,20 @@ def load_base_maps():
         logger.error(f"Error loading base maps: {e}")
 
 load_base_maps()
-import numpy as np # Ensure numpy is available for mask operations
+
+def blend_rgb565(fg, bg, alpha):
+    """Blend two RGB565 colors. alpha is 0.0 to 1.0 (1.0 = full foreground)"""
+    if alpha >= 1.0: return fg
+    if alpha <= 0.0: return bg
+    
+    r1, g1, b1 = (fg >> 11) & 0x1F, (fg >> 5) & 0x3F, fg & 0x1F
+    r2, bg_raw_g, b2 = (bg >> 11) & 0x1F, (bg >> 5) & 0x3F, bg & 0x1F
+    
+    r = min(31, int(r1 * alpha + r2 * (1.0 - alpha)))
+    g = min(63, int(g1 * alpha + bg_raw_g * (1.0 - alpha)))
+    b = min(31, int(b1 * alpha + b2 * (1.0 - alpha)))
+    
+    return (r << 11) | (g << 5) | b
 
 def interpolate_color_value(val, scale):
     if val <= scale[0][0]: c = scale[0][1]
@@ -378,6 +392,16 @@ def generate_voacap_response(query, map_type="REL"):
                         r, g, b = (c565 >> 11) & 0x1F, (c565 >> 5) & 0x3F, c565 & 0x1F
                         c565 = ((r >> 1) << 11) | ((g >> 1) << 5) | (b >> 1)
                     
+                    # Blend with background map if available
+                    bg_map = COUNTRIES_MAP if COUNTRIES_MAP is not None else TERRAIN_MAP
+                    if bg_map is not None:
+                        bg_c565 = bg_map[idx]
+                        # Use variable alpha based on propagation strength
+                        # For REL (0..1), val_g is strength. For MUF (0..50), normalize.
+                        p_str = val_g if not is_muf else min(1.0, val_g / 35.0)
+                        alpha = 0.4 + 0.4 * p_str  # Range 0.4 to 0.8
+                        c565 = blend_rgb565(c565, bg_c565, alpha)
+
                     # Overlay country outlines (Black pixels from mask)
                     if COUNTRIES_MASK is not None and COUNTRIES_MASK[idx]:
                         c565 = 0x0000
