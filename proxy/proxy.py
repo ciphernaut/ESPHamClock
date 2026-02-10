@@ -9,7 +9,8 @@ import json
 import parity_checker
 
 PORT = int(os.environ.get("PROXY_PORT", 9085))
-TARGET_HOST = "clearskyinstitute.com"
+TARGET_HOST = os.environ.get("TARGET_HOST", "clearskyinstitute.com")
+TARGET_PORT = int(os.environ.get("TARGET_PORT", 80))
 LOCAL_REPLACEMENT_HOST = "localhost"
 LOCAL_REPLACEMENT_PORT = 9086
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -94,7 +95,7 @@ class ShadowProxy(http.server.SimpleHTTPRequestHandler):
 
         # 1. Fetch from Original if needed
         if PROXY_MODE in ["ORIGINAL", "SHADOW", "VERIFY"]:
-            orig_status, orig_headers, orig_data = self.fetch_from_backend(TARGET_HOST, 80, 10, self.path, self.headers)
+            orig_status, orig_headers, orig_data = self.fetch_from_backend(TARGET_HOST, TARGET_PORT, 10, self.path, self.headers)
             if PROXY_MODE == "ORIGINAL":
                 print(f"  [ORIGINAL MODE] Status: {orig_status} ({len(orig_data)} bytes)")
                 self.send_backend_response(orig_status, orig_headers, orig_data)

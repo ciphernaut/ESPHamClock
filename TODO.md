@@ -46,5 +46,11 @@
 - [ ] Improve SDO image scaling/quality for better parity.
 
 ## Planned Enhancements
+- [ ] **Remove Upstream Dependency**: `clearskyinstitute.com` is decommissioning.
+    - [ ] Retire `proxy.py` upstream forwarding logic (Verify/Shadow modes).
+    - [ ] **Transition Parity Baseline**: Establish "Previous Stable Local Release" as the new source of truth.
+        - Run "Stable" (Baseline) vs "Dev" (Target) instances for regression testing using live local ingestion.
+        - Avoid maintenance of static mock datasets.
+    - [ ] Audit all ingestion services to ensure no hardcoded dependencies on `clearskyinstitute.com` exist.
 - [ ] **VOACAP**: [Implement Solar Wind/Kp/Bz integration for realistic propagation](docs/VOACAP-ENHANCEMENT-001.md).
 
