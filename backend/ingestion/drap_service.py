@@ -143,9 +143,9 @@ def fetch_and_process_drap():
         # Ensure we always have at least enough dense points for the client.
         # Use 5-minute intervals (300 points = 25 hours) to ensure every 10-minute bucket is filled.
         # Anchor to current time to avoid "data too sparse" errors if the last real datum is old.
-        # We seed a wide range (-48h to +24h) to handle clock desync between server and client.
+        # We seed a range from +10m down to -24h to handle minor clock drift and client expectations.
         now_ts = int(time.time())
-        for i in range(-288, 576): # From +24h down to -48h (total 72h @ 5min = 864 points)
+        for i in range(-2, 288): # From +10m down to -24h (total ~24h @ 5min)
             ts = (now_ts // 300) * 300 - i * 300
             if ts not in history:
                 history[ts] = f"{ts} : {dmin:.2f} {dmax:.2f} {dmean:.2f}"
@@ -153,7 +153,7 @@ def fetch_and_process_drap():
         sorted_uts = sorted(history.keys())
 
         with open(STATS_FILE, "w") as f:
-            for u in sorted_uts[-2000:]: # Keep a much larger history to ensure client coverage
+            for u in sorted_uts[-380:]: # Keep just over 24h worth of points (380 * 5min = ~31 hours)
                 f.write(f"{history[u]}\n")
         
         # Map generation (660x330)

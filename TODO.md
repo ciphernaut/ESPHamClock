@@ -22,11 +22,11 @@
 
 ## REST API Parity & Reconciliation
 - [ ] Investigate Client Timezone mismatch (`UTC+0` vs `UTC+10` in Australia).
-- [ ] Compare `get_spacewx.txt` fields for naming parity (e.g. `DRAP` missing in local).
+- [x] **Fix**: achieved 100% parity for `get_spacewx.txt` (restored DRAP, Bz, and DEDX fields).
 - [ ] Fine-tune VOACAP reliability peaks to match original server sensitivity.
 - [ ] Implement Comprehensive Parity Test Suite using REST APIs (`proxy/compare_v2.py`).
 
 ## Next Steps
-- [ ] Address world weather parity issues (prevailing stats via `wttr.in`).
+- [x] Address world weather parity issues (prevailing stats via `wttr.in`).
 - [ ] Improve SDO image scaling/quality for better parity.
 - [ ] Fully automate parity checking against the original server on port 8083.
