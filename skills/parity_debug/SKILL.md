@@ -1,3 +1,8 @@
+---
+name: parity_debug
+description: This skill provides tools and workflows for efficiently debugging parity between HamClock instances.
+---
+
 # Parity Debugging Skill
 This skill provides tools and workflows for efficiently debugging parity between HamClock instances.
 

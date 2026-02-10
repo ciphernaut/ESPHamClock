@@ -1,3 +1,8 @@
+---
+name: enhanced_verification
+description: This skill provides advanced tools for verifying HamClock parity through state injection, visual comparison, and log analysis.
+---
+
 # Enhanced Verification Skill
 This skill provides advanced tools for verifying HamClock parity through state injection, visual comparison, and log analysis.
 
