@@ -87,10 +87,12 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
             logger.debug(f"Geoloc request for IP: {ip}")
             result = geoloc_service.get_geoloc(ip)
             if result:
+                encoded_result = result.encode()
                 self.send_response(200)
                 self.send_header("Content-type", "text/plain")
+                self.send_header("Content-Length", str(len(encoded_result)))
                 self.end_headers()
-                self.wfile.write(result.encode())
+                self.wfile.write(encoded_result)
             else:
                 logger.warning(f"Geolocation failed for IP: {ip}")
                 self.send_error(500, "Geolocation failed")
@@ -141,12 +143,16 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
             logger.debug(f"Static request for: {path} -> {local_path}")
             
             if os.path.exists(local_path):
+                # Set content type based on extension
+                content_type = "application/octet-stream" if local_path.endswith(".z") else "text/plain"
                 with open(local_path, "rb") as f:
                     content = f.read()
                     self.send_response(200)
-                    self.send_header("Content-type", "text/plain")
+                    self.send_header("Content-type", content_type)
+                    self.send_header("Content-Length", str(len(content)))
                     self.end_headers()
                     self.wfile.write(content)
+                    logger.debug(f"Served {local_path} ({len(content)} bytes)")
             else:
                 logger.warning(f"Static file not found: {local_path}")
                 self.send_error(404, f"File {rel_path} not found in {DATA_DIR}")
@@ -279,6 +285,7 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
                 logger.debug(f"Serving live SDO image for {path}")
                 self.send_response(200)
                 self.send_header("Content-type", "application/octet-stream")
+                self.send_header("Content-Length", str(len(img_data)))
                 self.end_headers()
                 self.wfile.write(img_data)
             else:
@@ -301,11 +308,13 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
                 self.send_error(500, "Weather formatting failed")
                 return
 
-            logger.debug(f"Sending weather data ({len(formatted)} bytes)")
+            encoded_formatted = formatted.encode('utf-8')
+            logger.debug(f"Sending weather data ({len(encoded_formatted)} bytes)")
             self.send_response(200)
             self.send_header("Content-type", "text/plain")
+            self.send_header("Content-Length", str(len(encoded_formatted)))
             self.end_headers()
-            self.wfile.write(formatted.encode('utf-8'))
+            self.wfile.write(encoded_formatted)
         except (BrokenPipeError, ConnectionResetError) as e:
             logger.warning(f"Client disconnected during weather response: {e}")
         except Exception as e:

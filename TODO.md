@@ -14,11 +14,18 @@
 - [x] Map weather condition labels (Clear, Rain, Sunny) to match original backend format.
 - [/] Verify Group 2 parity improvements on dashboard.
 
-## Group 3: Dynamic Data Generation (Next)
-- [ ] Replace static `voacap_area_sample.bin` with dynamic VOACAP calculations.
-- [ ] Fetch/generate live SDO imagery instead of `sdo_sample.bmp.z`.
-- [ ] Implement full logic for `fetchPSKReporter.pl` with callsign/grid filtering.
-- [ ] Implement `fetchDRAP.pl` logic for absorption maps.
+## Group 3: Dynamic Data Generation (Completed with Issues)
+- [x] Replace static `voacap_area_sample.bin` with dynamic VOACAP calculations.
+- [x] Fetch/generate live SDO imagery instead of `sdo_sample.bmp.z`.
+- [x] Implement full logic for `fetchPSKReporter.pl` with callsign/grid filtering.
+- [x] Implement `fetchDRAP.pl` logic for absorption maps.
+
+## Active Priority Issues (Parity Fixes) ⚠️
+- [ ] **SDO Imagery**: "File not BMP" error for wavelengths (e.g., so4A). Investigate header/compression.
+- [ ] **Solar Wind (Bz/Bt)**: "BvBT data invalid" error. Verify JSON parsing and data formatting.
+- [ ] **Aurora**: "arora data invalid" error. Check `aurora/` endpoint data structure.
+- [ ] **Solar Flux**: "Solar Fluix data invalid" error. Verify `solarflux-99.txt` formatting.
+- [ ] **World Weather (DX Wx)**: Incorrect prevailing stats. Compare against `DE Wx` logic.
 
 ## Group 4: Polish & Parity (Continuous)
 - [ ] Achieve 95%+ parity on all critical text-based data files.

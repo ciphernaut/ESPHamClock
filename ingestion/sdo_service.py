@@ -2,6 +2,7 @@ import os
 import requests
 import subprocess
 import zlib
+import re
 import logging
 import time
 
@@ -27,68 +28,76 @@ SDO_MAP = {
 
 def get_sdo_image(path):
     """
-    Fetches, processes, and returns a .bmp.z solar image.
-    path: e.g. /SDO/latest_170_HMIB.bmp.z
+    Fetches and processes an SDO image based on the requested filename.
+    Filenames like f_304_170.bmp or latest_170_HMIB.bmp
     """
     filename = os.path.basename(path)
     
-    # Extract wavelength/type
+    # 1. Determine wavelength
+    # Map common strings to SDO filename patterns
     wavelength = "171" # Default
     if "HMIB" in filename: wavelength = "HMIB"
     elif "HMIIC" in filename: wavelength = "HMIIC"
-    elif "HMII" in filename: wavelength = "HMI"
+    elif "HMI" in filename: wavelength = "HMI"
+    elif "131" in filename: wavelength = "131"
     elif "171" in filename: wavelength = "171"
     elif "193" in filename: wavelength = "193"
     elif "211" in filename: wavelength = "211"
     elif "304" in filename: wavelength = "304"
-    elif "170" in filename: wavelength = "171" # HamClock uses 170 for 171?
+    elif "170" in filename: wavelength = "171" # Legacy/Default
+    
+    # 2. Determine resolution
+    # Try to find a resolution like 170, 340, 510, 680 in filename
+    res_match = re.search(r'(\d{3})', filename)
+    resolution = int(res_match.group(1)) if res_match else 170
+    # Avoid crazy resolutions
+    if resolution not in [170, 340, 510, 680]:
+        resolution = 170
 
     sdo_filename = SDO_MAP.get(wavelength, "latest_1024_0171.jpg")
-    cache_path = os.path.join(CACHE_DIR, f"{wavelength}.bmp.z")
-    
-    # Cache for 30 minutes
-    if os.path.exists(cache_path) and (time.time() - os.path.getmtime(cache_path) < 1800):
-        logger.debug(f"Serving SDO {wavelength} from cache")
-        with open(cache_path, "rb") as f:
-            return f.read()
+    cache_id = f"{wavelength}_{resolution}"
+    cache_path = os.path.join(CACHE_DIR, f"{cache_id}.bmp.z")
 
+    # Check cache (30 mins)
+    if os.path.exists(cache_path):
+        if time.time() - os.path.getmtime(cache_path) < 1800:
+            logger.debug(f"Serving SDO {cache_id} from cache")
+            with open(cache_path, "rb") as f:
+                return f.read()
+
+    logger.info(f"Fetching fresh SDO image for {wavelength} at {resolution}x{resolution}")
+    img_url = f"https://sdo.gsfc.nasa.gov/assets/img/latest/{sdo_filename}"
+    
     try:
-        url = f"{SDO_BASE_URL}{sdo_filename}"
-        logger.info(f"Fetching SDO image from {url}")
-        resp = requests.get(url, timeout=10)
+        resp = requests.get(img_url, timeout=15)
         resp.raise_for_status()
         
-        temp_jpg = os.path.join(CACHE_DIR, "temp.jpg")
-        temp_bmp = os.path.join(CACHE_DIR, "temp.bmp")
+        # Process using ImageMagick
+        temp_jpg = f"/tmp/sdo_{wavelength}.jpg"
+        temp_bmp = f"/tmp/sdo_{wavelength}.bmp"
         
         with open(temp_jpg, "wb") as f:
             f.write(resp.content)
             
-        # Process with ImageMagick: Resize to 170x170, convert to 24bpp BMP
-        # HamClock expects 170x170 24bpp.
-        # magick temp.jpg -resize 170x170! -type truecolor BMP3:temp.bmp
-        subprocess.run([
-            "magick", temp_jpg, 
-            "-resize", "170x170!", 
-            "-type", "truecolor", 
-            "BMP3:" + temp_bmp
-        ], check=True)
+        # Resize to requested resolution and convert to BMP 24bpp (truecolor)
+        res_str = f"{resolution}x{resolution}!"
+        subprocess.run(["magick", temp_jpg, "-resize", res_str, "-type", "truecolor", "BMP3:" + temp_bmp], check=True)
         
         with open(temp_bmp, "rb") as f:
             bmp_data = f.read()
             
-        # Compress with Zlib
+        # Compress
         compressed = zlib.compress(bmp_data)
         
+        # Save to cache
         with open(cache_path, "wb") as f:
             f.write(compressed)
             
-        # Cleanup
+        # Cleanup temp files
         if os.path.exists(temp_jpg): os.remove(temp_jpg)
         if os.path.exists(temp_bmp): os.remove(temp_bmp)
-        
+            
         return compressed
-
     except Exception as e:
-        logger.error(f"Error fetching SDO image: {e}")
+        logger.error(f"Error processing SDO image {wavelength}: {e}")
         return None
