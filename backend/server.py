@@ -66,8 +66,9 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
             self.handle_voacap_map(normalized_path)
         elif normalized_path == "/fetchDRAP.pl":
             self.handle_drap(query)
-        elif normalized_path in ["/fetchONTA.pl", 
-                    "/fetchWordWx.pl", "/fetchAurora.pl", "/fetchDXPeds.pl"]:
+        elif normalized_path == "/fetchWordWx.pl":
+            self.handle_word_wx()
+        elif normalized_path in ["/fetchONTA.pl", "/fetchAurora.pl", "/fetchDXPeds.pl"]:
             # Serve as static for now or implement shim
             self.handle_static(normalized_path)
         elif normalized_path.startswith("/SDO/"):
@@ -265,6 +266,18 @@ class HamClockBackend(http.server.SimpleHTTPRequestHandler):
                 self.send_error(404, "World weather sample not found")
         except Exception as e:
             logger.error(f"Error in handle_world_wx: {e}")
+            self.send_error(500, str(e))
+
+    def handle_word_wx(self):
+        try:
+            logger.info("Generating dynamic Word Wx prevailing stats")
+            result = weather_service.get_prevailing_stats()
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain")
+            self.end_headers()
+            self.wfile.write(result.encode())
+        except Exception as e:
+            logger.error(f"Error in handle_word_wx: {e}")
             self.send_error(500, str(e))
 
     def handle_band_conditions(self, query):
